@@ -1,0 +1,10 @@
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcodeproj/
+xcuserdata/
+.DS_Store
+.gradle/
+local.properties
+android/**/build/
