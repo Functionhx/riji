@@ -71,7 +71,7 @@ public struct Day: Hashable, Sendable, Identifiable {
 
 public struct Block: Hashable, Sendable, Identifiable {
     public enum Kind: String, Sendable { case section, paragraph, list, check, spark, divider, image }
-    public enum SectionRole: String, Sendable, CaseIterable { case todo, spark, notes }
+    public enum SectionRole: String, Sendable, CaseIterable { case todo, spark, notes, tomorrow }
 
     public var id: String
     public var noteID: String
@@ -111,6 +111,11 @@ public struct Block: Hashable, Sendable, Identifiable {
     public var carryFrom: String? { attrs["carry_from"]?.string }
     public var carriedTo: String? { attrs["carried_to"]?.string }
     public var carriedDays: Int { attrs["carried_days"]?.int ?? 0 }
+    /// 被延续过来的任务删掉后，原块记为「放下了」，不再被带走。
+    public var dropped: Bool { attrs["dropped"]?.bool ?? false }
+    /// 明日目标 → 次日今日目标：目标块记 `planned_to`，次日的任务记 `planned_from`。
+    public var plannedTo: String? { attrs["planned_to"]?.string }
+    public var plannedFrom: String? { attrs["planned_from"]?.string }
     public var progressID: String? { attrs["progress_id"]?.string }
     public var color: String { attrs["color"]?.string ?? "yellow" }
     public var indent: Int { attrs["indent"]?.int ?? 0 }

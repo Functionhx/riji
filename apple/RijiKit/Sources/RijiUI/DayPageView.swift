@@ -1,9 +1,12 @@
 import RijiKit
 import SwiftUI
 
-/// 今天页（也是任意一天的页面）：日期、墨线、TODO、Spark、随记、晚间总结。
+/// 今天页（也是任意一天的页面）：日期、墨线、今日目标、Spark、随记，最后是今日总结与明日目标。
 public struct DayPageView: View {
     @Environment(RijiModel.self) private var model
+    @AppStorage("riji.backfill.dismissed") private var dismissedBackfill = ""
+    @AppStorage(ReminderSettings.enabledKey) private var reminderOn = ReminderSettings.defaultEnabled
+    @AppStorage(ReminderSettings.minutesKey) private var reminderMinutes = ReminderSettings.defaultMinutes
     let date: String
 
     public init(date: String) { self.date = date }
@@ -12,17 +15,22 @@ public struct DayPageView: View {
         let clock = model.book.clock
         let isToday = date == model.today
         let stats = model.stats(on: date)
+        ScrollViewReader { reader in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header(clock: clock, isToday: isToday, stats: stats)
                 if isToday {
-                    InkLine(progress: clock.dayProgress(at: model.currentDate), now: model.currentDate, timeZone: clock.timeZone)
+                    if let missed = model.missedEvening, missed != dismissedBackfill {
+                        BackfillBanner(date: missed) { dismissedBackfill = missed }.padding(.top, 16)
+                    }
+                    InkLine(progress: clock.dayProgress(at: model.currentDate), now: model.currentDate, timeZone: clock.timeZone,
+                            reminder: reminderOn ? reminderMinutes : nil)
                         .padding(.top, 18)
                 }
-                TodoSection(date: date, stats: stats).padding(.top, 30)
+                TodoSection(date: date, isToday: isToday, stats: stats).padding(.top, 30)
                 SparkSection(date: date).padding(.top, 30)
                 NotesSection(date: date).padding(.top, 30)
-                if isToday { EveningCard(date: date, stats: stats).padding(.top, 34) }
+                EveningCard(date: date, isToday: isToday).padding(.top, 34).id("evening")
                 Spacer(minLength: 60)
             }
             .frame(maxWidth: 620, alignment: .leading)
@@ -32,6 +40,11 @@ public struct DayPageView: View {
         }
         .background(Ink.paper)
         .scrollContentBackground(.hidden)
+        .onAppear {
+            // 开发截图：RIJI_SCROLL=evening 直接滚到晚间卡
+            if ProcessInfo.processInfo.environment["RIJI_SCROLL"] == "evening" { reader.scrollTo("evening", anchor: .bottom) }
+        }
+        }
     }
 
     @ViewBuilder
@@ -69,6 +82,8 @@ struct InkLine: View {
     var progress: Double
     var now: Date
     var timeZone: TimeZone
+    /// 晚间提醒的时刻（分钟），在墨线上画一道赭色短刻度。
+    var reminder: Int? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -77,6 +92,11 @@ struct InkLine: View {
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Ink.line).frame(height: 2)
                     Rectangle().fill(Ink.ink).frame(width: x, height: 2)
+                    if let reminder, reminder >= 6 * 60 {
+                        Rectangle().fill(Ink.ochreSoft).frame(width: 2, height: 10)
+                            .offset(x: proxy.size.width * Double(reminder - 6 * 60) / (18 * 60) - 1)
+                            .help("\(ReminderSettings.label(reminder)) 晚间提醒")
+                    }
                     Circle().fill(Ink.ochre).frame(width: 10, height: 10)
                         .overlay(Circle().stroke(Ink.paper, lineWidth: 3))
                         .offset(x: x - 5)
@@ -128,6 +148,7 @@ struct SectionHeader<Trailing: View>: View {
 struct TodoSection: View {
     @Environment(RijiModel.self) private var model
     let date: String
+    let isToday: Bool
     let stats: DayStats
     @State private var draft = ""
     @FocusState private var focused: String?
@@ -135,7 +156,7 @@ struct TodoSection: View {
     var body: some View {
         let items = model.items(.todo, on: date)
         VStack(alignment: .leading, spacing: 0) {
-            SectionHeader(title: "TODO") {
+            SectionHeader(title: isToday ? "今日目标" : "当天目标") {
                 Text("\(stats.done) / \(stats.total)").font(Typeface.mono(11)).foregroundStyle(Ink.ink2)
             }
             ForEach(items) { item in
@@ -172,7 +193,7 @@ struct TaskRow: View {
     @State private var text = ""
 
     var body: some View {
-        let carriedAway = item.carriedTo != nil && !item.checked
+        let carriedAway = (item.carriedTo != nil || item.dropped) && !item.checked
         HStack(spacing: 12) {
             CheckCircle(checked: item.checked) {
                 model.perform { try model.book.setChecked(!item.checked, of: item.id) }
@@ -187,7 +208,15 @@ struct TaskRow: View {
                 .onSubmit(commit)
                 .onChange(of: focused.wrappedValue) { old, _ in if old == item.id { commit() } }
             if carriedAway {
-                Text("已延续 →").font(Typeface.mono(10.5)).foregroundStyle(Ink.ink3)
+                Text(item.dropped ? "已放下" : "已延续 →").font(Typeface.mono(10.5)).foregroundStyle(Ink.ink3)
+            }
+            if item.plannedFrom != nil, item.carryFrom == nil {
+                Text("昨日定")
+                    .font(Typeface.mono(10.5))
+                    .foregroundStyle(Ink.ink2)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Ink.paper2, in: RoundedRectangle(cornerRadius: 4))
+                    .help("前一天晚上写在「明日目标」里的")
             }
             if item.carryFrom != nil, item.carriedDays > 0 {
                 Text("↻ \(item.carriedDays) 天")
@@ -215,7 +244,7 @@ struct TaskRow: View {
         .contextMenu {
             Button(item.checked ? "标为未完成" : "标为完成") { model.perform { try model.book.setChecked(!item.checked, of: item.id) } }
             Divider()
-            Button("删除", role: .destructive) { model.perform { try model.book.delete(item.id) } }
+            Button(item.carryFrom != nil ? "不做了（不再延续）" : "删除", role: .destructive) { model.perform { try model.book.delete(item.id) } }
         }
     }
 
@@ -292,33 +321,208 @@ struct NotesSection: View {
     }
 }
 
-// ---------------------------------------------------------------- 晚间总结
+// ---------------------------------------------------------------- 今日总结 · 明日目标
 
+/// 一天的收尾：一句总结，加上明天要做的事。明日目标在第二天自动成为那天的今日目标。
+/// 过去的日子也显示，方便补写。
 struct EveningCard: View {
     @Environment(RijiModel.self) private var model
+    @AppStorage(ReminderSettings.enabledKey) private var reminderOn = ReminderSettings.defaultEnabled
+    @AppStorage(ReminderSettings.minutesKey) private var reminderMinutes = ReminderSettings.defaultMinutes
     let date: String
-    let stats: DayStats
+    let isToday: Bool
     @State private var summary = ""
+    @State private var loadedFor = ""
+    @State private var draft = ""
+    @FocusState private var focused: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: "今晚总结")
-            Text("完成 \(stats.done) · 延续 \(stats.carried) · Spark \(stats.sparks)")
-                .font(Typeface.mono(12)).foregroundStyle(Ink.ink2)
-            TextField("", text: $summary, prompt: Text("用一句话记下今天").foregroundStyle(Ink.ink3), axis: .vertical)
+        let evening = model.evening(on: date)
+        let stats = evening.stats
+        let clock = model.book.clock
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(text: isToday ? "今日总结" : "当天总结")
+                Spacer()
+                Text("完成 \(stats.done) · 延续 \(stats.carried) · Spark \(stats.sparks)")
+                    .font(Typeface.mono(11)).foregroundStyle(Ink.ink2)
+            }
+            TextField("", text: $summary, prompt: Text(isToday ? "用一句话记下今天" : "补一句那天的总结").foregroundStyle(Ink.ink3), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(Typeface.serif(16, weight: .regular))
                 .foregroundStyle(Ink.ink)
-                .onSubmit { model.perform { try model.book.setSummary(summary, on: date) } }
-            HStack(spacing: 6) {
-                Image(systemName: "globe").font(.system(size: 11))
-                Text("网站上将公开：今日 \(stats.done)/\(stats.total) · 连续 \(model.streak) 天（同步上线后可发布）")
+                .focused($focused, equals: "summary")
+                .padding(.top, 10)
+                .onChange(of: summary) { _, new in
+                    guard loadedFor == date, new != model.book.day(date)?.summary else { return }
+                    model.perform { try model.book.setSummary(new, on: date) }
+                }
+
+            DashedRule().padding(.vertical, 16)
+
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(text: isToday ? "明日目标" : "次日目标")
+                Spacer()
+                Text(isToday ? "明早出现在今日目标里" : "排进 \(clock.title(for: clock.adding(days: 1, to: date)))")
+                    .font(Typeface.mono(10.5)).foregroundStyle(Ink.ink3)
             }
-            .font(Typeface.body(12)).foregroundStyle(Ink.ink3)
+            .padding(.bottom, 4)
+            ForEach(model.items(.tomorrow, on: date)) { item in
+                PlanRow(item: item, focused: $focused)
+            }
+            HStack(spacing: 12) {
+                Image(systemName: "plus").font(.system(size: 12, weight: .medium)).foregroundStyle(Ink.ink3)
+                    .frame(width: 20, height: 20)
+                TextField("", text: $draft, prompt: Text("明天想做的事，回车继续").foregroundStyle(Ink.ink3))
+                    .textFieldStyle(.plain)
+                    .font(Typeface.body(15))
+                    .foregroundStyle(Ink.ink)
+                    .focused($focused, equals: "new-plan")
+                    .onSubmit(addDraft)
+            }
+            .padding(.vertical, 8)
+            if isToday, evening.pending > 0 {
+                Text("另有 \(evening.pending) 件没做完，会自动延续，不用再写一遍。")
+                    .font(Typeface.body(12)).foregroundStyle(Ink.ink3)
+                    .padding(.top, 2)
+            }
+
+            if isToday {
+                HStack(spacing: 10) {
+                    if !evening.missing.isEmpty {
+                        Text("还差：" + evening.missing.joined(separator: " · "))
+                            .foregroundStyle(Ink.ochre)
+                    } else {
+                        Text("今天收好了").foregroundStyle(Ink.ink2)
+                    }
+                    Spacer()
+                    reminderLabel
+                }
+                .font(Typeface.mono(11))
+                .padding(.top, 14)
+                HStack(spacing: 6) {
+                    Image(systemName: "globe").font(.system(size: 11))
+                    Text("网站上将公开：今日 \(stats.done)/\(stats.total) · 连续 \(model.streak) 天（同步上线后可发布）")
+                }
+                .font(Typeface.body(12)).foregroundStyle(Ink.ink3)
+                .padding(.top, 8)
+            }
         }
-        .padding(16)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-        .onAppear { summary = model.book.day(date)?.summary ?? "" }
+        .onAppear(perform: load)
+        .onChange(of: date) { _, _ in load() }
+    }
+
+    @ViewBuilder
+    private var reminderLabel: some View {
+        let label = Label(reminderOn ? "\(ReminderSettings.label(reminderMinutes)) 提醒" : "提醒已关", systemImage: "bell")
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(Ink.ink3)
+        #if os(macOS)
+        SettingsLink { label }.buttonStyle(.plain).help("更改提醒时间")
+        #else
+        label
+        #endif
+    }
+
+    private func load() {
+        loadedFor = ""
+        summary = model.book.day(date)?.summary ?? ""
+        loadedFor = date
+    }
+
+    private func addDraft() {
+        let text = draft.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        model.perform { try model.book.add(.check, text: text, to: .tomorrow, on: date, now: model.currentDate) }
+        draft = ""
+        focused = "new-plan"
+    }
+}
+
+/// 一条明日目标：左边是箭头（它还不是任务，明天才是）；排进第二天后标「已排进」。
+struct PlanRow: View {
+    @Environment(RijiModel.self) private var model
+    let item: Block
+    var focused: FocusState<String?>.Binding
+    @State private var text = ""
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Ink.ochre)
+                .frame(width: 20, height: 20)
+            TextField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(Typeface.body(15))
+                .foregroundStyle(Ink.ink)
+                .focused(focused, equals: item.id)
+                .onSubmit(commit)
+                .onChange(of: focused.wrappedValue) { old, _ in if old == item.id { commit() } }
+            if item.plannedTo != nil {
+                Text("已排进 →").font(Typeface.mono(10.5)).foregroundStyle(Ink.ink3)
+                    .help("已经出现在第二天的目标里")
+            }
+            if let progress = model.progress(item.progressID) {
+                Text(progress.target.map { "\(progress.current)/\($0)" } ?? "\(progress.current) \(progress.unit)")
+                    .font(Typeface.mono(11)).foregroundStyle(Ink.ink2)
+            }
+        }
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .onAppear { text = item.text.plain }
+        .onChange(of: item.text.plain) { _, new in if focused.wrappedValue != item.id { text = new } }
+        .contextMenu {
+            Button("删除", role: .destructive) { model.perform { try model.book.delete(item.id) } }
+        }
+    }
+
+    private func commit() {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            model.perform { try model.book.delete(item.id) }
+        } else if trimmed != item.text.plain {
+            model.perform { try model.book.setText(trimmed, of: item.id) }
+        }
+    }
+}
+
+/// 卡片里的虚线分隔。
+struct DashedRule: View {
+    var body: some View {
+        Line().stroke(Ink.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])).frame(height: 1)
+    }
+
+    private struct Line: Shape {
+        func path(in rect: CGRect) -> Path {
+            Path { $0.move(to: CGPoint(x: 0, y: rect.midY)); $0.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)) }
+        }
+    }
+}
+
+/// 早上：昨天写过东西却没写总结时，今天页顶部的一条细横幅。
+struct BackfillBanner: View {
+    @Environment(RijiModel.self) private var model
+    let date: String
+    var dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Ink.ochre).frame(width: 6, height: 6)
+            Text("\(model.book.clock.title(for: date))的总结还没写")
+                .font(Typeface.body(13)).foregroundStyle(Ink.ink2)
+            Button("补写 →") { model.open(date) }
+                .buttonStyle(.plain)
+                .font(Typeface.body(13, weight: .medium)).foregroundStyle(Ink.ochre)
+            Spacer()
+            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
+                .buttonStyle(.plain).foregroundStyle(Ink.ink3)
+                .help("今天不再提示")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(Ink.paper2, in: RoundedRectangle(cornerRadius: 8))
     }
 }

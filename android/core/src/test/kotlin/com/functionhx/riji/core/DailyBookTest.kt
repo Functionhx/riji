@@ -81,6 +81,116 @@ class DailyBookTest {
         val carried = book.items(SectionRole.TODO, "2026-10-09").first { it.carryFrom == original.id }
         book.delete(carried.id)
         assertNull(book.block(original.id)?.carriedTo)
+        assertTrue(book.block(original.id)!!.dropped)
+        // 再打开那天不会把它又带回来，也不算在原来那天的总数里
+        book.ensureDay("2026-10-09", monday)
+        assertTrue(book.items(SectionRole.TODO, "2026-10-09").none { it.text == "sony 继续" })
+        assertEquals(0, book.stats("2026-10-08").total)  // 由 Spark 转来的那条延续走了，sony 放下了
+    }
+
+    @Test fun newDayHasFourSections() {
+        val book = book()
+        val day = book.ensureDay("2026-10-08", monday)
+        assertEquals(SectionRole.entries.toSet(), book.blocks(day.noteId).mapNotNull { it.role }.toSet())
+    }
+
+    @Test fun tomorrowGoalsBecomeNextDaysGoals() {
+        val book = book()
+        val d = "2026-10-07"
+        book.add(BlockKind.CHECK, "sony 继续", SectionRole.TODO, d, now = monday)
+        val circuit = book.add(BlockKind.CHECK, "电路 20 讲", SectionRole.TOMORROW, d, now = monday)!!
+        val report = book.add(BlockKind.CHECK, "写周报", SectionRole.TOMORROW, d, now = monday)!!
+        val same = book.add(BlockKind.CHECK, "Sony 继续 ", SectionRole.TOMORROW, d, now = monday)!!
+        book.add(BlockKind.CHECK, "  ", SectionRole.TOMORROW, d, now = monday)
+        assertNull(book.day("2026-10-08"))
+
+        book.ensureDay("2026-10-08", monday)
+        val today = book.items(SectionRole.TODO, "2026-10-08")
+        assertEquals(listOf("电路 20 讲", "写周报", "sony 继续"), today.map { it.text })
+        assertEquals(circuit.id, today[0].plannedFrom)
+        assertEquals(circuit.progressId, today[0].progressId)
+        assertNull(today[2].plannedFrom)
+        assertEquals(today[0].id, book.block(circuit.id)?.plannedTo)
+        assertEquals(today[1].id, book.block(report.id)?.plannedTo)
+        assertEquals(today[2].id, book.block(same.id)?.plannedTo)
+        book.ensureDay("2026-10-08", monday)
+        assertEquals(3, book.items(SectionRole.TODO, "2026-10-08").size)
+
+        book.ensureDay("2026-10-09", monday)
+        val third = book.items(SectionRole.TODO, "2026-10-09")
+        assertEquals(listOf("电路 20 讲", "写周报", "sony 继续"), third.map { it.text })
+        assertTrue(third.all { it.plannedFrom == null && it.carryFrom != null })
+    }
+
+    @Test fun goalsAfterMidnightLandAndPastDaysStayUntouched() {
+        val book = book()
+        book.add(BlockKind.CHECK, "背单词", SectionRole.TODO, "2026-10-07", now = monday)
+        book.ensureDay("2026-10-08", monday)
+        val goal = book.add(BlockKind.CHECK, "整理笔记", SectionRole.TOMORROW, "2026-10-07", now = monday)!!
+        book.add(BlockKind.CHECK, "跑步", SectionRole.TOMORROW, "2026-10-07", now = monday)
+        assertEquals(listOf("整理笔记", "跑步", "背单词"), book.items(SectionRole.TODO, "2026-10-08").map { it.text })
+        book.add(BlockKind.CHECK, "背单词", SectionRole.TOMORROW, "2026-10-07", now = monday)
+        assertEquals(3, book.items(SectionRole.TODO, "2026-10-08").size)
+        assertNotNull(book.block(goal.id)?.plannedTo)
+
+        val later = Instant.ofEpochSecond(1_791_857_000)  // 2026-10-13
+        val late = book.add(BlockKind.CHECK, "补的目标", SectionRole.TOMORROW, "2026-10-07", now = later)!!
+        assertNull(book.block(late.id)?.plannedTo)
+        assertEquals(3, book.items(SectionRole.TODO, "2026-10-08").size)
+    }
+
+    @Test fun editingAGoalFollowsItUntilTouched() {
+        val book = book()
+        val goal = book.add(BlockKind.CHECK, "电路 20 讲", SectionRole.TOMORROW, "2026-10-07", now = monday)!!
+        book.ensureDay("2026-10-08", monday)
+        val copyId = book.block(goal.id)!!.plannedTo!!
+        book.setText("电路 21 讲", goal.id)
+        assertEquals("电路 21 讲", book.block(copyId)?.text)
+        book.setChecked(true, copyId)
+        book.setText("电路 22 讲", goal.id)
+        assertEquals("电路 21 讲", book.block(copyId)?.text)
+    }
+
+    @Test fun oldPagesGetTheTomorrowSectionOnFirstWrite() {
+        val book = book()
+        val day = book.ensureDay("2026-10-07", monday)
+        book.store.write(listOf(Triple(RecordType.BLOCK, book.section(SectionRole.TOMORROW, day)!!.id, null)))
+        assertNull(book.section(SectionRole.TOMORROW, day))
+        book.add(BlockKind.CHECK, "写周报", SectionRole.TOMORROW, "2026-10-07", now = monday)
+        assertEquals(listOf("写周报"), book.items(SectionRole.TOMORROW, "2026-10-07").map { it.text })
+        val roles = book.blocks(day.noteId).filter { it.kind == BlockKind.SECTION }.sortedBy { it.order }.mapNotNull { it.role }
+        assertEquals(listOf(SectionRole.TODO, SectionRole.SPARK, SectionRole.NOTES, SectionRole.TOMORROW), roles)
+    }
+
+    @Test fun eveningNudgeOnlyAsksForWhatIsMissing() {
+        val book = book()
+        val date = "2026-10-08"
+        book.setChecked(true, book.add(BlockKind.CHECK, "徐涛马原", SectionRole.TODO, date, now = monday)!!.id)
+        book.add(BlockKind.CHECK, "sony 继续", SectionRole.TODO, date, now = monday)
+        var evening = book.evening(date)
+        assertEquals(listOf("今日总结", "明日目标"), evening.missing)
+        assertEquals("今晚总结", evening.nudge?.title)
+        assertTrue(evening.nudge!!.body.contains("今天完成 1/2") && evening.nudge!!.body.contains("没做完的 1 件会自动延续"))
+        book.add(BlockKind.CHECK, "写周报", SectionRole.TOMORROW, date, now = monday)
+        assertEquals("今日总结还没写", book.evening(date).nudge?.title)
+        book.setSummary("马原过完一轮。", date)
+        evening = book.evening(date)
+        assertTrue(evening.isComplete)
+        assertNull(evening.nudge)
+        book.ensureDay("2026-10-09", monday)
+        book.setSummary("休息日", "2026-10-09")
+        assertEquals("明天做什么？", book.evening("2026-10-09").nudge?.title)
+    }
+
+    @Test fun morningAsksToBackfillYesterday() {
+        val book = book()
+        assertNull(book.missedEvening("2026-10-08"))
+        book.ensureDay("2026-10-07", monday)
+        assertNull(book.missedEvening("2026-10-08"))
+        book.add(BlockKind.SPARK, "参考文献必填", SectionRole.SPARK, "2026-10-07", now = monday)
+        assertEquals("2026-10-07", book.missedEvening("2026-10-08"))
+        book.setSummary("写了一点", "2026-10-07")
+        assertNull(book.missedEvening("2026-10-08"))
     }
 
     @Test fun heatmapAndStreak() {

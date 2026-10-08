@@ -3,6 +3,9 @@
     <!-- 晚间提醒：本地闹钟 + 通知（不依赖谷歌推送，荣耀国行机同样可用） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 准点提醒：13+ 用 USE_EXACT_ALARM（自动授予；日迹不上架商店），12 用 SCHEDULE_EXACT_ALARM（该版本自动授予） -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
 
     <application
         android:allowBackup="false"

@@ -40,8 +40,9 @@
 
 - 自动生成；标题是日期（`10 月 8 日`），副标题星期与「今天还剩 13 小时 38 分」。
 - 顶部一条**墨线**：06:00–24:00 的进度，赭色圆点是「现在」。
-- 默认三区：TODO / Spark / 随记。区块可折叠、可调顺序、可增删；区块也只是普通的块（§6），
-  所以今天页同时是一则完整的笔记。
+- 默认四区：今日目标（TODO）/ Spark / 随记 / 明日目标，页尾一张「今日总结 · 明日目标」卡。
+  区块可折叠、可调顺序、可增删；区块也只是普通的块（§6），所以今天页同时是一则完整的笔记。
+  （「明日目标」区是后加的：老页面在第一次写入时补上。）
 
 **TODO 与延续**
 
@@ -49,6 +50,14 @@
 - 跨天：未完成项在新一天出现在今天页顶部（「从昨天带来」分组），计数 `↻ N 天`；
   原来那天保留「已延续到 10/08」的灰色记录，历史不被改写。
 - 第 3 天起轻提示一次：拆小 / 放进「以后」/ 保持。不弹窗、不打扰。
+- 删掉一条延续过来的任务 = 不做了：原块标「已放下」，不再被带走，也不算进原来那天的总数。
+
+**明日目标 → 今日目标**
+
+- 晚上在卡片里写明日目标；第二天的页面生成时，它们排在「今日目标」最上面（标「昨日定」），然后才是延续的事。
+- 和延续过来的事、那天已经写过的事重名时不重复添加；空白的不带。
+- 过了零点才补写的目标直接排进已生成的今天，并接在之前排进来的目标后面；补写一周前的目标不会塞进早已过去的日子。
+- 改写已排进去的目标，第二天那条还没动过（没勾、没改）就一起改。
 
 **长期进度**
 
@@ -63,7 +72,11 @@
 
 **晚间总结与提醒**
 
-- 默认 22:30 本地通知（时间可调，可关）。
+- 默认 22:30 本地通知（时间可调，可关；macOS ⌘, / Android「我」）。**只在今日总结或明日目标还空着时提醒，
+  而且只提缺的那一样**（「今日总结还没写」/「明天做什么？」/ 两样都缺时「今晚总结」），附今天完成数与会自动延续的件数。
+  macOS 预先排好未来 14 天（今天这条随内容变化重排，写完即撤）；Android 到点时读本机日志再决定。
+- 早上：昨天写过东西却没写总结，今天页顶部出现一条「补写 →」横幅（可关）。
+- 卡片在过去的日子也显示（「当天总结 / 次日目标」），方便补写；今天的卡片写着「还差：…」。
 - 总结卡：完成 N、延续 N、新增 Spark N、推进了哪些进度，加一句你自己写的话；
   热力图记一格（颜色深浅 = 当天完成量）。
 - 卡片上两个开关：公开今日进度（§3.3-②）、发成网站日志（§3.3-③）。
@@ -220,12 +233,12 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 | --- | --- | --- |
 | `paragraph` | `style: body | title | heading | subheading | mono | quote` | 段落样式 |
 | `list` | `style: bullet | dash | number`, `indent` | 列表 |
-| `check` | `checked`, `indent`, `carry_from?`, `carried_days`, `progress_id?` | 清单 / TODO |
+| `check` | `checked`, `indent`, `carry_from?`, `carried_to?`, `carried_days`, `dropped?`, `planned_from?`, `planned_to?`, `progress_id?` | 清单 / TODO |
 | `spark` | `color`, `promoted_to?`, `site_spark_id?`, `site_dev?` | Spark |
 | `table` | `rows`, `cols`, `cells: [[RichText]]` | 表格 |
 | `image` / `file` / `audio` / `scan` / `sketch` | `attachment_id`, `caption?` | 附件 |
 | `divider` | — | 分割线 |
-| `section` | `collapsed`, `title` | 今天页的区块、可折叠标题 |
+| `section` | `role: todo | spark | notes | tomorrow`, `collapsed`, `title` | 今天页的区块、可折叠标题 |
 
 **RichText**：`[{ text, marks?: { b, i, u, s, code, hl: color, color, link: url | note:id } }]`。
 不允许任意 HTML。
@@ -234,6 +247,8 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 
 延续不复制历史：在新一天插入一个 `check` 块，`carry_from` 指向原块，原块 `attrs.carried_to`
 记下新块 id；原块在原来那天显示为灰色「已延续」。勾选新块时，原块状态不变（历史真实）。
+明日目标同理：`tomorrow` 区的 `check` 块在次日今日目标里生成新块，双方以 `planned_to` / `planned_from` 互指；
+目标再被延续时，新块去掉 `planned_from`。
 
 ## 7. 本地存储
 

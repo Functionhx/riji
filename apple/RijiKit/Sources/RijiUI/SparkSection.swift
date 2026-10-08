@@ -89,7 +89,7 @@ struct StickyNote: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 4) {
                     Text(timeLabel)
-                    if spark.attrs["promoted_to"] != nil { Text("· 已转 TODO") }
+                    if spark.attrs["promoted_to"] != nil { Text("· 已转目标") }
                 }
                 .font(Typeface.mono(10))
                 .foregroundStyle(Ink.stickyInk.opacity(0.55))
@@ -102,7 +102,7 @@ struct StickyNote: View {
         }
         .contextMenu {
             if spark.attrs["promoted_to"] == nil {
-                Button("变成今天的 TODO") { model.perform { try model.book.promote(spark: spark.id, on: model.today, now: model.currentDate) } }
+                Button("变成今日目标") { model.perform { try model.book.promote(spark: spark.id, on: model.today, now: model.currentDate) } }
             }
             Button("改写") {
                 text = spark.text.plain
@@ -117,7 +117,7 @@ struct StickyNote: View {
             Divider()
             Button("撕掉", role: .destructive) { model.perform { try model.book.delete(spark.id) } }
         }
-        .help("双击改写，右键变成 TODO 或换颜色")
+        .help("双击改写，右键变成今日目标或换颜色")
     }
 
     /// 由 id 决定的轻微倾斜（±1.5°），同一张便利贴每次都一样。

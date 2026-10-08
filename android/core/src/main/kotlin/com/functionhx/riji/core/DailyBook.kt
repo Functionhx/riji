@@ -98,12 +98,13 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
 
     fun stats(date: String): DayStats {
         val written = items(SectionRole.TODO, date)
-        // 没做完、已被带到后面某天的任务不算在这一天的总数里；但这一天仍然「写过东西」。
-        val todos = written.filter { it.carriedTo == null || it.checked }
+        // 没做完、已被带到后面某天（或放下了）的任务不算在这一天的总数里；但这一天仍然「写过东西」。
+        val todos = written.filter { (it.carriedTo == null && !it.dropped) || it.checked }
         val sparks = items(SectionRole.SPARK, date)
         val notes = items(SectionRole.NOTES, date)
+        val wroteEvening = !day(date)?.summary.isNullOrEmpty() || items(SectionRole.TOMORROW, date).isNotEmpty()
         return DayStats(todos.size, todos.count { it.checked }, todos.count { it.carryFrom != null }, sparks.size,
-            written.isNotEmpty() || sparks.isNotEmpty() || notes.any { it.text.isNotEmpty() })
+            written.isNotEmpty() || sparks.isNotEmpty() || notes.any { it.text.isNotEmpty() } || wroteEvening)
     }
 
     fun heatmap(): Map<String, Int> = days.mapNotNull { day ->
@@ -121,6 +122,22 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
         return count
     }
 
+    // ---------------------------------------------------------------- 晚间
+
+    /** 一天收尾的情况：今日总结写了没有、明日目标定了几条、还有几件没做完（会自动延续）。 */
+    fun evening(date: String): Evening {
+        val plans = items(SectionRole.TOMORROW, date).count { normalized(it.text).isNotEmpty() }
+        val pending = items(SectionRole.TODO, date).count { !it.checked && it.carriedTo == null && !it.dropped }
+        return Evening(date, stats(date), !day(date)?.summary.isNullOrBlank(), plans, pending)
+    }
+
+    /** 早上补写：昨天写过东西、却没写总结时返回昨天的日期。 */
+    fun missedEvening(today: String): String? {
+        val yesterday = clock.adding(-1, today)
+        val evening = evening(yesterday)
+        return if (day(yesterday) != null && evening.stats.hasContent && !evening.hasSummary) yesterday else null
+    }
+
     // ---------------------------------------------------------------- 今天页
 
     fun ensureDay(date: String, now: Instant = Instant.now()): Day {
@@ -134,7 +151,7 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
             Triple(RecordType.DAY, date, day.json()),
         )
         var order: String? = null
-        for ((role, title) in listOf(SectionRole.TODO to "TODO", SectionRole.SPARK to "SPARK", SectionRole.NOTES to "随记")) {
+        for ((role, title) in listOf(SectionRole.TODO to "TODO", SectionRole.SPARK to "SPARK", SectionRole.NOTES to "随记", SectionRole.TOMORROW to "明日目标")) {
             order = OrderKey.after(order)
             val section = Block.create(RecordId.make(now.toEpochMilli()), noteId, null, order, BlockKind.SECTION,
                 mapOf("role" to JsonValue.str(role.wire), "title" to JsonValue.str(title)), "", stamp)
@@ -145,24 +162,54 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
         return day
     }
 
+    /**
+     * 从最近的前一天，把两样东西带到这一天「今日目标」的顶部：先是那天定下的明日目标，再是没勾、也还没被带走的 TODO。
+     * 原块记下去向（planned_to / carried_to），历史不改写。明日目标只落到今天及以后的页面上；
+     * 和延续过来的事、这一天已有的事重名的目标不重复添加。与 Swift 的 carryOver 相同。
+     */
     fun carryOver(day: Day, now: Instant = Instant.now()) {
         val previous = days.firstOrNull { it.date < day.date } ?: return
         val target = section(SectionRole.TODO, day) ?: return
-        val source = section(SectionRole.TODO, previous) ?: return
-        val pending = children(source).filter { it.kind == BlockKind.CHECK && !it.checked && it.carriedTo == null }
-        if (pending.isEmpty()) return
+        val pending = section(SectionRole.TODO, previous)?.let(::children).orEmpty()
+            .filter { it.kind == BlockKind.CHECK && !it.checked && it.carriedTo == null && !it.dropped }
+        val plans = if (day.date < clock.key(now)) emptyList() else section(SectionRole.TOMORROW, previous)?.let(::children).orEmpty()
+            .filter { it.kind == BlockKind.CHECK && it.plannedTo == null && normalized(it.text).isNotEmpty() }
+        if (pending.isEmpty() && plans.isEmpty()) return
+
         val gap = maxOf(1, clock.daysBetween(previous.date, day.date))
         val existing = children(target)
-        var lastOrder: String? = null
+        // 插在顶部；这一天已经有排进来的目标（过了零点逐条补写）时，接在它们后面，保持书写顺序。
+        val anchor = existing.indexOfLast { it.plannedFrom != null && it.carryFrom == null }.takeIf { it >= 0 }
+        var lastOrder: String? = anchor?.let { existing[it].order }
+        val upper = if (anchor != null) existing.getOrNull(anchor + 1)?.order else existing.firstOrNull()?.order
+        fun nextOrder(): String = (if (lastOrder == null && upper == null) "a" else OrderKey.between(lastOrder, upper)).also { lastOrder = it }
         val edits = mutableListOf<Triple<String, String, JsonValue?>>()
-        for (original in pending) {
-            val order = lastOrder?.let { OrderKey.between(it, existing.firstOrNull()?.order) }
-                ?: existing.firstOrNull()?.let { OrderKey.between(null, it.order) } ?: "a"
-            lastOrder = order
-            val attrs = original.attrs - "carried_to" + mapOf(
+        val landed = mutableMapOf<String, String>()
+        for (block in existing) landed.putIfAbsent(normalized(block.text), block.id)
+        val carried = pending.map { original ->
+            val attrs = original.attrs - "carried_to" - "planned_from" + mapOf(
                 "carry_from" to JsonValue.str(original.id), "carried_days" to JsonValue.num(original.carriedDays + gap))
-            val copy = original.copy(id = RecordId.make(now.toEpochMilli()), noteId = day.noteId, parentId = target.id, order = order,
+            original to original.copy(id = RecordId.make(now.toEpochMilli()), noteId = day.noteId, parentId = target.id, order = "",
                 attrs = attrs, createdAt = now.toString())
+        }
+        for ((original, copy) in carried) landed.putIfAbsent(normalized(original.text), copy.id)
+
+        val planCopies = mutableListOf<Block>()
+        for (plan in plans) {
+            val key = normalized(plan.text)
+            val landedId = landed[key] ?: run {
+                val attrs = mutableMapOf<String, JsonValue>("checked" to JsonValue.Bool(false), "planned_from" to JsonValue.str(plan.id))
+                plan.attrs["progress_id"]?.let { attrs["progress_id"] = it }
+                val copy = Block.create(RecordId.make(now.toEpochMilli()), day.noteId, target.id, nextOrder(), BlockKind.CHECK, attrs, plan.text, now.toString())
+                planCopies += copy
+                landed[key] = copy.id
+                copy.id
+            }
+            edits += Triple(RecordType.BLOCK, plan.id, plan.withAttr("planned_to", JsonValue.str(landedId)).json())
+        }
+        for (copy in planCopies) edits += Triple(RecordType.BLOCK, copy.id, copy.json())
+        for ((original, unordered) in carried) {
+            val copy = unordered.copy(order = nextOrder())
             edits += Triple(RecordType.BLOCK, copy.id, copy.json())
             edits += Triple(RecordType.BLOCK, original.id, original.withAttr("carried_to", JsonValue.str(copy.id)).json())
         }
@@ -174,7 +221,7 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
     fun add(kind: BlockKind, text: String, role: SectionRole, date: String, after: String? = null,
             attrs: Map<String, JsonValue> = emptyMap(), now: Instant = Instant.now()): Block? {
         val day = ensureDay(date, now)
-        val section = section(role, day) ?: return null
+        val section = section(role, day) ?: createSection(role, day, now)
         val siblings = children(section)
         val index = after?.let { id -> siblings.indexOfFirst { it.id == id } } ?: -1
         val order = if (index >= 0) OrderKey.between(siblings[index].order, siblings.getOrNull(index + 1)?.order) else OrderKey.after(siblings.lastOrNull()?.order)
@@ -190,11 +237,24 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
         val block = Block.create(RecordId.make(now.toEpochMilli()), day.noteId, section.id, order, kind, finalAttrs, text, now.toString())
         edits += Triple(RecordType.BLOCK, block.id, block.json())
         commit(edits)
+        // 第二天的页面已经在了（过了零点才写明日目标）：直接排进去。
+        if (role == SectionRole.TOMORROW) days.lastOrNull { it.date > date }?.let { carryOver(it, now) }
         return block
+    }
+
+    /** 老页面没有的区块（比如「明日目标」是后来加的）在第一次写入时补上，排在最后。 */
+    private fun createSection(role: SectionRole, day: Day, now: Instant): Block {
+        val titles = mapOf(SectionRole.TODO to "TODO", SectionRole.SPARK to "SPARK", SectionRole.NOTES to "随记", SectionRole.TOMORROW to "明日目标")
+        val last = blocks(day.noteId).filter { it.parentId == null }.maxOfOrNull { it.order }
+        val section = Block.create(RecordId.make(now.toEpochMilli()), day.noteId, null, OrderKey.after(last), BlockKind.SECTION,
+            mapOf("role" to JsonValue.str(role.wire), "title" to JsonValue.str(titles.getValue(role))), "", now.toString())
+        commit(listOf(Triple(RecordType.BLOCK, section.id, section.json())))
+        return section
     }
 
     fun setText(text: String, blockId: String) {
         var block = block(blockId)?.takeIf { it.text != text } ?: return
+        val before = block.text
         block = block.withText(text)
         val edits = mutableListOf<Triple<String, String, JsonValue?>>()
         if (block.kind == BlockKind.CHECK) {
@@ -206,6 +266,10 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
             } else block.withAttr("progress_id", null)
         }
         edits += Triple(RecordType.BLOCK, block.id, block.json())
+        // 改写已排进第二天的明日目标：那边还没动过的话一起改。
+        block.plannedTo?.let(::block)?.takeIf { it.plannedFrom == block.id && !it.checked && it.text == before }?.let { copy ->
+            edits += Triple(RecordType.BLOCK, copy.id, copy.withText(text).withAttr("progress_id", block.attrs["progress_id"]).json())
+        }
         commit(edits)
     }
 
@@ -229,9 +293,9 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
     fun delete(blockId: String) {
         val block = block(blockId) ?: return
         val edits = mutableListOf<Triple<String, String, JsonValue?>>(Triple(RecordType.BLOCK, blockId, null))
-        // 删掉一个被带过来的任务：原来那天的记录恢复成「未延续」。
+        // 删掉一个被带过来的任务 = 不做了：原来那天的记录标成「放下了」，以后不会再被带回来。
         block.carryFrom?.let(::block)?.takeIf { it.carriedTo == blockId }?.let { original ->
-            edits += Triple(RecordType.BLOCK, original.id, original.withAttr("carried_to", null).json())
+            edits += Triple(RecordType.BLOCK, original.id, original.withAttr("carried_to", null).withAttr("dropped", JsonValue.Bool(true)).json())
         }
         commit(edits)
     }
@@ -259,9 +323,34 @@ class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
 
     fun updateProgress(progress: ProgressItem) { commit(listOf(Triple(RecordType.PROGRESS, progress.id, progress.json()))) }
 
+    private fun normalized(text: String) = text.trim().lowercase()
+
     private fun dayDate(block: Block): String? = days.firstOrNull { it.noteId == block.noteId }?.date
 
     private fun progressFor(match: ProgressParser.Match, date: String): ProgressItem =
         progresses.firstOrNull { it.name == match.name }?.let { if (it.unit.isEmpty()) it.copy(unit = match.unit) else it }
             ?: ProgressItem(RecordId.make(), match.name, match.unit, maxOf(0, match.value - 1), updatedDay = date)
+}
+
+/** 一天的收尾：晚间提醒据此决定提不提醒、提醒什么。与 Swift 的 Evening 相同（文字也相同）。 */
+data class Evening(val date: String, val stats: DayStats, val hasSummary: Boolean, val plans: Int, val pending: Int) {
+    data class Nudge(val title: String, val body: String)
+
+    val isComplete: Boolean get() = hasSummary && plans > 0
+
+    /** 还差什么（界面上的「还差：…」）。 */
+    val missing: List<String> get() = (if (hasSummary) emptyList() else listOf("今日总结")) + (if (plans > 0) emptyList() else listOf("明日目标"))
+
+    /** 晚间通知的文字；都写好了就是 null（不提醒）。 */
+    val nudge: Nudge?
+        get() {
+            val done = if (stats.total > 0) "今天完成 ${stats.done}/${stats.total}。" else ""
+            val carry = if (pending > 0) "没做完的 $pending 件会自动延续，不用再抄一遍。" else ""
+            return when {
+                hasSummary && plans > 0 -> null
+                !hasSummary && plans == 0 -> Nudge("今晚总结", done + "用一句话记下今天，再定下明天要做的事。" + carry)
+                !hasSummary -> Nudge("今日总结还没写", done + "明天的目标定好了，再用一句话记下今天。")
+                else -> Nudge("明天做什么？", "总结写好了。定一两件明天的事，明早会出现在今日目标里。" + carry)
+            }
+        }
 }

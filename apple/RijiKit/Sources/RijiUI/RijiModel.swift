@@ -127,6 +127,17 @@ public final class RijiModel {
         _ = revision
         return book.notes(on: date)
     }
+
+    public func evening(on date: String) -> Evening {
+        _ = revision
+        return book.evening(on: date)
+    }
+
+    /// 昨天写过东西却没写总结：返回昨天的日期（今天页顶部的「补写」）。
+    public var missedEvening: String? {
+        _ = revision
+        return book.missedEvening(today: today)
+    }
 }
 
 /// 第一次打开时的示例内容（只用于预览与截图，真实数据从空白开始）。
@@ -155,16 +166,20 @@ public enum DemoData {
                 try book.add(.spark, text: text, to: .spark, on: yesterday, now: now)
             }
             try book.setNotes("感觉黑夜模式下更好看？", on: yesterday, now: now)
+            try book.setSummary("马原过完一轮，电路推进到 18 讲。", on: yesterday)
+            for text in ["电路 19 讲", "sony 继续"] {
+                try book.add(.check, text: text, to: .tomorrow, on: yesterday, now: now)
+            }
             // 今天：1008
             try book.ensureDay(today, now: now)
-            if let english = book.items(.todo, on: today).first {
+            if let english = book.items(.todo, on: today).first(where: { $0.carryFrom != nil }) {
                 try book.setAttr("carried_days", .number(2), of: english.id)
             }
             if let task = try book.add(.check, text: "徐涛马原", to: .todo, on: today, now: now) { try book.setChecked(true, of: task.id) }
-            if let task = try book.add(.check, text: "电路 19 讲", to: .todo, on: today, now: now) { try book.setChecked(true, of: task.id) }
+            if let task = book.items(.todo, on: today).first(where: { $0.text.plain == "电路 19 讲" }) { try book.setChecked(true, of: task.id) }
             let spark = try book.add(.spark, text: "每日日志提醒功能", to: .spark, on: today, now: now)
             if let spark { try book.promote(spark: spark.id, on: today, now: now) }
-            try book.add(.check, text: "sony 继续", to: .todo, on: today, now: now)
+            try book.add(.check, text: "电路 20 讲", to: .tomorrow, on: today, now: now)
             for text in ["微信文件传输助手分析历史", "参考文献必填", "继续浏览·全部文章？"] {
                 try book.add(.spark, text: text, to: .spark, on: today, now: now)
             }

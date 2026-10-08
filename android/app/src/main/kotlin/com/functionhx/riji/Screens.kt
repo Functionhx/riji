@@ -119,6 +119,7 @@ fun TodayScreen(model: RijiViewModel, date: String) {
     val todos = model.items(SectionRole.TODO, date)
     val sparks = model.items(SectionRole.SPARK, date)
     var captureAsSpark by remember { mutableStateOf(false) }
+    var dismissedBackfill by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(Modifier.weight(1f).padding(horizontal = 24.dp)) {
             item {
@@ -133,14 +134,20 @@ fun TodayScreen(model: RijiViewModel, date: String) {
                     "${clock.weekday(date)} · 今天还剩 ${minutes / 60} 小时 ${minutes % 60} 分"
                 } else clock.weekday(date)
                 Text(subtitle, style = body(14.sp, ink.ink2))
-                if (isToday) InkLine(clock.dayProgress(now), ZonedDateTime.now(clock.zone).format(DateTimeFormatter.ofPattern("HH:mm")))
+                if (isToday) {
+                    model.missedEvening()?.takeIf { it != dismissedBackfill }?.let { missed ->
+                        BackfillBanner(clock.title(missed), onOpen = { model.open(missed) }, onDismiss = { dismissedBackfill = missed })
+                    }
+                    InkLine(clock.dayProgress(now), ZonedDateTime.now(clock.zone).format(DateTimeFormatter.ofPattern("HH:mm")),
+                        if (model.reminderOn) model.reminderMinutes else null)
+                }
             }
-            item { SectionHeader("TODO", "${stats.done} / ${stats.total}") }
+            item { SectionHeader(if (isToday) "今日目标" else "当天目标", "${stats.done} / ${stats.total}") }
             items(todos, key = { it.id }) { TaskRow(model, it) }
             item { SectionHeader("SPARK", "${sparks.size} 张") }
             item { SparkWall(model, sparks) }
             item { NotesBlock(model, date) }
-            if (isToday) item { EveningCard(model, date) }
+            item { EveningCard(model, date, isToday) }
             item { Spacer(Modifier.height(24.dp)) }
         }
         CaptureBar(asSpark = captureAsSpark, onToggle = { captureAsSpark = !captureAsSpark }) { text ->
@@ -150,7 +157,7 @@ fun TodayScreen(model: RijiViewModel, date: String) {
 }
 
 @Composable
-private fun InkLine(progress: Double, now: String) {
+private fun InkLine(progress: Double, now: String, reminder: Int?) {
     val ink = LocalInk.current
     Column(Modifier.padding(top = 16.dp)) {
         Canvas(Modifier.fillMaxWidth().height(10.dp)) {
@@ -158,6 +165,11 @@ private fun InkLine(progress: Double, now: String) {
             val x = size.width * progress.toFloat()
             drawLine(ink.line, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx())
             drawLine(ink.ink, Offset(0f, y), Offset(x, y), strokeWidth = 2.dp.toPx())
+            // 晚间提醒的时刻：一道赭色短刻度
+            if (reminder != null && reminder >= 6 * 60) {
+                val rx = size.width * (reminder - 6 * 60) / (18f * 60)
+                drawLine(ink.ochreSoft, Offset(rx, 0f), Offset(rx, size.height), strokeWidth = 2.dp.toPx())
+            }
             drawCircle(ink.paper, radius = 6.5.dp.toPx(), center = Offset(x, y))
             drawCircle(ink.ochre, radius = 5.dp.toPx(), center = Offset(x, y))
         }
@@ -186,7 +198,7 @@ private fun TaskRow(model: RijiViewModel, item: Block) {
     val ink = LocalInk.current
     var editing by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
-    val carriedAway = item.carriedTo != null && !item.checked
+    val carriedAway = (item.carriedTo != null || item.dropped) && !item.checked
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .combinedClickable(onClick = { if (!carriedAway) model.toggle(item.id, !item.checked) }, onLongClick = { menu = true }),
@@ -199,7 +211,11 @@ private fun TaskRow(model: RijiViewModel, item: Block) {
             style = body(15.sp, if (item.checked || carriedAway) ink.ink3 else ink.ink)
                 .copy(textDecoration = if (item.checked) TextDecoration.LineThrough else null),
         )
-        if (carriedAway) Text("已延续 →", style = mono(10.5.sp, ink.ink3))
+        if (carriedAway) Text(if (item.dropped) "已放下" else "已延续 →", style = mono(10.5.sp, ink.ink3))
+        if (item.plannedFrom != null && item.carryFrom == null) {
+            Text("昨日定", style = mono(10.5.sp, ink.ink2),
+                modifier = Modifier.padding(start = 6.dp).background(ink.paper2, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+        }
         if (item.carryFrom != null && item.carriedDays > 0) {
             Text("↻ ${item.carriedDays} 天", style = mono(11.sp, ink.ochre),
                 modifier = Modifier.border(1.dp, ink.ochreSoft, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
@@ -212,10 +228,45 @@ private fun TaskRow(model: RijiViewModel, item: Block) {
         if (item.attrs["from_spark"] != null) Text(" ← Spark", style = mono(10.5.sp, ink.ink3))
         DropdownMenu(menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("改写") }, onClick = { menu = false; editing = true })
-            DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; model.delete(item.id) })
+            DropdownMenuItem(text = { Text(if (item.carryFrom != null) "不做了（不再延续）" else "删除") }, onClick = { menu = false; model.delete(item.id) })
         }
     }
     if (editing) EditDialog("改写", item.text, onDismiss = { editing = false }) { model.rename(item.id, it) }
+}
+
+/** 一条明日目标：箭头（它明天才是任务）；排进第二天后标「已排进」。轻点改写。 */
+@Composable
+private fun PlanRow(model: RijiViewModel, item: Block) {
+    val ink = LocalInk.current
+    var editing by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { editing = true }, verticalAlignment = Alignment.CenterVertically) {
+        Text("↳", style = body(15.sp, ink.ochre, FontWeight.Bold), modifier = Modifier.width(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(item.text, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = body(15.sp, ink.ink))
+        if (item.plannedTo != null) Text("已排进 →", style = mono(10.5.sp, ink.ink3))
+        model.progress(item.progressId)?.let { progress ->
+            Text(progress.target?.let { " ${progress.current}/$it" } ?: " ${progress.current} ${progress.unit}", style = mono(11.sp, ink.ink2))
+        }
+    }
+    if (editing) EditDialog("改写（清空即删除）", item.text, onDismiss = { editing = false }) { model.rename(item.id, it) }
+}
+
+/** 早上：昨天写过东西却没写总结时，今天页顶部的一条细横幅。 */
+@Composable
+private fun BackfillBanner(title: String, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val ink = LocalInk.current
+    Row(
+        Modifier.padding(top = 14.dp).fillMaxWidth().background(ink.paper2, RoundedCornerShape(8.dp)).clickable(onClick = onOpen)
+            .padding(start = 14.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(ink.ochre, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Text("${title}的总结还没写", style = body(13.sp, ink.ink2))
+        Text("  补写 →", style = body(13.sp, ink.ochre, FontWeight.Medium))
+        Spacer(Modifier.weight(1f))
+        TextButton(onDismiss) { Text("×", style = body(15.sp, ink.ink3)) }
+    }
 }
 
 @Composable
@@ -259,11 +310,11 @@ private fun SparkWall(model: RijiViewModel, sparks: List<Block>) {
                 ) {
                     Text(spark.text, style = serif(15.sp, ink.stickyInk, FontWeight.Normal))
                     Spacer(Modifier.height(8.dp))
-                    if (spark.attrs["promoted_to"] != null) Text("已转 TODO", style = mono(10.sp, ink.stickyInk.copy(alpha = 0.55f)))
+                    if (spark.attrs["promoted_to"] != null) Text("已转目标", style = mono(10.sp, ink.stickyInk.copy(alpha = 0.55f)))
                 }
                 Box(Modifier.align(Alignment.TopCenter).offset(y = (-7).dp).width(46.dp).height(14.dp).background(ink.tape))
                 DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                    if (spark.attrs["promoted_to"] == null) DropdownMenuItem(text = { Text("变成今天的 TODO") }, onClick = { menu = false; model.promote(spark.id) })
+                    if (spark.attrs["promoted_to"] == null) DropdownMenuItem(text = { Text("变成今日目标") }, onClick = { menu = false; model.promote(spark.id) })
                     for ((color, name) in listOf("yellow" to "黄", "pink" to "粉", "mint" to "薄荷", "blue" to "雾蓝")) {
                         DropdownMenuItem(text = { Text("换成$name") }, onClick = { menu = false; model.recolor(spark.id, color) })
                     }
@@ -290,24 +341,61 @@ private fun NotesBlock(model: RijiViewModel, date: String) {
     }
 }
 
+/** 一天的收尾：一句总结，加上明天要做的事（第二天自动成为那天的今日目标）。过去的日子也显示，方便补写。 */
 @Composable
-private fun EveningCard(model: RijiViewModel, date: String) {
+private fun EveningCard(model: RijiViewModel, date: String, isToday: Boolean) {
     val ink = LocalInk.current
-    val stats = model.stats(date)
+    val evening = model.evening(date)
+    val stats = evening.stats
+    val clock = model.book.clock
     var summary by remember(date) { mutableStateOf(model.summary(date)) }
+    var draft by remember(date) { mutableStateOf("") }
+    val addDraft = { val text = draft.trim(); if (text.isNotEmpty()) { model.addPlan(text, date); draft = "" } }
     Column(
         Modifier.padding(top = 28.dp).fillMaxWidth()
             .dashedBorder(ink.line).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Eyebrow("今晚总结")
-        Text("完成 ${stats.done} · 延续 ${stats.carried} · Spark ${stats.sparks}", style = mono(12.sp, ink.ink2))
-        Box {
-            if (summary.isEmpty()) Text("用一句话记下今天", style = serif(16.sp, ink.ink3, FontWeight.Normal))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Eyebrow(if (isToday) "今日总结" else "当天总结")
+            Text("完成 ${stats.done} · 延续 ${stats.carried} · Spark ${stats.sparks}", style = mono(11.sp, ink.ink2))
+        }
+        Box(Modifier.padding(top = 10.dp)) {
+            if (summary.isEmpty()) Text(if (isToday) "用一句话记下今天" else "补一句那天的总结", style = serif(16.sp, ink.ink3, FontWeight.Normal))
             BasicTextField(summary, { summary = it; model.setSummary(it, date) }, textStyle = serif(16.sp, ink.ink, FontWeight.Normal),
                 cursorBrush = SolidColor(ink.ochre), modifier = Modifier.fillMaxWidth())
         }
-        Text("网站上将公开：今日 ${stats.done}/${stats.total} · 连续 ${model.streak()} 天（同步上线后可发布）", style = body(12.sp, ink.ink3))
+        Canvas(Modifier.padding(vertical = 16.dp).fillMaxWidth().height(1.dp)) {
+            drawLine(ink.line, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Eyebrow(if (isToday) "明日目标" else "次日目标")
+            Text(if (isToday) "明早出现在今日目标里" else "排进 ${clock.title(clock.adding(1, date))}", style = mono(10.5.sp, ink.ink3))
+        }
+        for (item in model.items(SectionRole.TOMORROW, date)) PlanRow(model, item)
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("＋", style = body(15.sp, ink.ink3), modifier = Modifier.width(22.dp))
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.weight(1f)) {
+                if (draft.isEmpty()) Text("明天想做的事", style = body(15.sp, ink.ink3))
+                BasicTextField(
+                    draft, { draft = it }, singleLine = true, textStyle = body(15.sp, ink.ink), cursorBrush = SolidColor(ink.ochre),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = KeyboardActions(onNext = { addDraft() }, onDone = { addDraft() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        if (isToday && evening.pending > 0) Text("另有 ${evening.pending} 件没做完，会自动延续，不用再写一遍。", style = body(12.sp, ink.ink3))
+        if (isToday) {
+            Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                if (evening.missing.isNotEmpty()) Text("还差：" + evening.missing.joinToString(" · "), style = mono(11.sp, ink.ochre))
+                else Text("今天收好了", style = mono(11.sp, ink.ink2))
+                Text(if (model.reminderOn) "${EveningReminder.label(model.reminderMinutes)} 提醒" else "提醒已关", style = mono(11.sp, ink.ink3),
+                    modifier = Modifier.clickable { model.tab = Tab.ME })
+            }
+            Text("网站上将公开：今日 ${stats.done}/${stats.total} · 连续 ${model.streak()} 天（同步上线后可发布）", style = body(12.sp, ink.ink3),
+                modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }
 
@@ -456,12 +544,28 @@ fun MeScreen(model: RijiViewModel) {
             Text("ƒ ", style = serif(32.sp, ink.ochre))
             Text("日迹", style = serif(32.sp, ink.ink))
         }
-        Text("每天一页：灵感、TODO、长期进度、晚上一句总结。", style = body(14.sp, ink.ink2))
+        Text("每天一页：灵感、今日目标、长期进度、晚上一句总结和明日目标。", style = body(14.sp, ink.ink2))
         Box(Modifier.fillMaxWidth().height(1.dp).background(ink.line))
         Eyebrow("同步")
         Text("一键同步（手机 → 腾讯云 → GitHub，与 MacBook 和个人网站互通）在下一阶段开放。现在的内容只在这台手机上。", style = body(13.5.sp, ink.ink2))
-        Eyebrow("提醒")
-        Text("每晚 22:30 本地提醒写今晚总结。荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则提醒可能被系统拦下。", style = body(13.5.sp, ink.ink2))
+        Eyebrow("晚间提醒")
+        val context = androidx.compose.ui.platform.LocalContext.current
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("每晚提醒写今日总结和明日目标", style = body(14.5.sp, ink.ink))
+                Text(
+                    EveningReminder.label(model.reminderMinutes) + "  更改",
+                    style = mono(12.sp, if (model.reminderOn) ink.ochre else ink.ink3),
+                    modifier = Modifier.padding(top = 4.dp).clickable(enabled = model.reminderOn) {
+                        android.app.TimePickerDialog(context, { _, h, m -> model.setReminder(true, h * 60 + m) },
+                            model.reminderMinutes / 60, model.reminderMinutes % 60, true).show()
+                    },
+                )
+            }
+            Switch(model.reminderOn, { model.setReminder(it, model.reminderMinutes) })
+        }
+        Text("都写好了就不提醒；只差一样，就只提那一样。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。" +
+            "荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则提醒可能被系统拦下。", style = body(13.sp, ink.ink3))
         Eyebrow("这台设备")
         Text("已记录 ${model.days().count { model.stats(it.date).hasContent }} 天 · 数据只在本机", style = mono(12.sp, ink.ink3))
     }

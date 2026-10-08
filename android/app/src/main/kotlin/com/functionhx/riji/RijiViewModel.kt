@@ -88,9 +88,24 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
     fun streak() = revision.let { book.streak(today) }
     fun notes(date: String) = revision.let { book.notes(date) }
     fun summary(date: String) = revision.let { book.day(date)?.summary ?: "" }
+    fun evening(date: String) = revision.let { book.evening(date) }
+    fun missedEvening() = revision.let { book.missedEvening(today) }
+
+    // 晚间提醒的设置（与接收器读同一份偏好）
+    var reminderOn by mutableStateOf(EveningReminder.enabled(application))
+        private set
+    var reminderMinutes by mutableIntStateOf(EveningReminder.minutes(application))
+        private set
+
+    fun setReminder(on: Boolean, minutes: Int) {
+        reminderOn = on
+        reminderMinutes = minutes
+        EveningReminder.save(getApplication(), on, minutes)
+    }
 
     // 写入
     fun addTask(text: String, date: String) = perform { book.add(BlockKind.CHECK, text, SectionRole.TODO, date) }
+    fun addPlan(text: String, date: String) = perform { book.add(BlockKind.CHECK, text, SectionRole.TOMORROW, date) }
     fun addSpark(text: String, date: String) = perform { book.add(BlockKind.SPARK, text, SectionRole.SPARK, date) }
     fun toggle(id: String, checked: Boolean) = perform { book.setChecked(checked, id) }
     fun rename(id: String, text: String) = perform { if (text.isBlank()) book.delete(id) else book.setText(text.trim(), id) }

@@ -9,7 +9,7 @@ public struct DayClock: Sendable {
         timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(secondsFromGMT: 8 * 3600)!
     }
 
-    var calendar: Calendar {
+    public var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         return calendar
@@ -206,14 +206,15 @@ public final class DailyBook: @unchecked Sendable {
 
     public func stats(on date: String) -> DayStats {
         let written = items(.todo, on: date)
-        // 没做完、已被带到后面某天的任务不算在这一天的总数里（它在新的那天继续算）；但这一天仍然「写过东西」。
-        let todos = written.filter { $0.carriedTo == nil || $0.checked }
+        // 没做完、已被带到后面某天（或放下了）的任务不算在这一天的总数里；但这一天仍然「写过东西」。
+        let todos = written.filter { ($0.carriedTo == nil && !$0.dropped) || $0.checked }
         let sparks = items(.spark, on: date)
         let notes = items(.notes, on: date)
+        let wroteEvening = !(day(date)?.summary.isEmpty ?? true) || !items(.tomorrow, on: date).isEmpty
         return DayStats(
             total: todos.count, done: todos.filter(\.checked).count, carried: todos.filter { $0.carryFrom != nil }.count,
             sparks: sparks.count,
-            hasContent: !written.isEmpty || !sparks.isEmpty || notes.contains { !$0.text.plain.isEmpty })
+            hasContent: !written.isEmpty || !sparks.isEmpty || notes.contains { !$0.text.plain.isEmpty } || wroteEvening)
     }
 
     /// 热力图：日期 → 等级 0…4（按当天完成数）。
@@ -239,7 +240,24 @@ public final class DailyBook: @unchecked Sendable {
         return count
     }
 
-    // ---------------------------------------------------------------- 今天页
+    // ---------------------------------------------------------------- 晚间
+
+    /// 一天收尾的情况：今日总结写了没有、明日目标定了几条、还有几件没做完（会自动延续）。
+    public func evening(on date: String) -> Evening {
+        let plans = items(.tomorrow, on: date).filter { !Self.normalized($0.text.plain).isEmpty }
+        let pending = items(.todo, on: date).filter { !$0.checked && $0.carriedTo == nil && !$0.dropped }
+        return Evening(date: date, stats: stats(on: date),
+                       hasSummary: !(day(date)?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                       plans: plans.count, pending: pending.count)
+    }
+
+    /// 早上补写：昨天写过东西、却没写总结时返回昨天的日期。
+    public func missedEvening(today: String) -> String? {
+        let yesterday = clock.adding(days: -1, to: today)
+        let evening = evening(on: yesterday)
+        return day(yesterday) != nil && evening.stats.hasContent && !evening.hasSummary ? yesterday : nil
+    }
+
 
     /// 确保某天的页面存在（新的一天自动生成），并把之前没做完的 TODO 带过来。
     @discardableResult
@@ -255,7 +273,7 @@ public final class DailyBook: @unchecked Sendable {
             (RecordType.note, noteID, note.json), (RecordType.day, date, day.json),
         ]
         var order: String? = nil
-        for (role, title) in [(Block.SectionRole.todo, "TODO"), (.spark, "SPARK"), (.notes, "随记")] {
+        for (role, title) in [(Block.SectionRole.todo, "TODO"), (.spark, "SPARK"), (.notes, "随记"), (.tomorrow, "明日目标")] {
             order = OrderKey.after(order)
             let section = Block(id: RecordID.make(now: now), noteID: noteID, parentID: nil, order: order!, kind: .section,
                                 attrs: ["role": .string(role.rawValue), "title": .string(title)], createdAt: now)
@@ -266,32 +284,75 @@ public final class DailyBook: @unchecked Sendable {
         return day
     }
 
-    /// 从最近的前一天，把没勾、也还没被带走的 TODO 带到这一天顶部。原块记下「已延续到」，历史不改写。
+    /// 从最近的前一天，把两样东西带到这一天「今日目标」的顶部：先是那天定下的明日目标，再是没勾、也还没被带走的 TODO。
+    /// 原块记下去向（`planned_to` / `carried_to`），历史不改写。明日目标只落到今天及以后的页面上
+    /// （补写一周前的「明日目标」不会塞进早已过去的那天）；和延续过来的事、这一天已有的事重名的目标不重复添加。
     public func carryOver(into day: Day, now: Date = Date()) throws {
-        guard let previous = days.first(where: { $0.date < day.date }),
-              let target = section(.todo, of: day), let source = section(.todo, of: previous) else { return }
-        let pending = children(of: source).filter { $0.kind == .check && !$0.checked && $0.carriedTo == nil }
-        guard !pending.isEmpty else { return }
+        guard let previous = days.first(where: { $0.date < day.date }), let target = section(.todo, of: day) else { return }
+        let pending = section(.todo, of: previous).map(children(of:))?
+            .filter { $0.kind == .check && !$0.checked && $0.carriedTo == nil && !$0.dropped } ?? []
+        let plans = day.date < clock.key(for: now) ? [] : (section(.tomorrow, of: previous).map(children(of:)) ?? [])
+            .filter { $0.kind == .check && $0.plannedTo == nil && !Self.normalized($0.text.plain).isEmpty }
+        guard !pending.isEmpty || !plans.isEmpty else { return }
+
         let gap = max(1, clock.daysBetween(previous.date, day.date))
         let existing = children(of: target)
-        var order = existing.first.map { OrderKey.between(nil, $0.order) } ?? "a"
-        var edits: [(type: String, id: String, value: JSONValue?)] = []
-        var lastOrder: String? = nil
-        for original in pending {
-            order = lastOrder.map { OrderKey.between($0, existing.first?.order) } ?? order
+        // 插在顶部；这一天已经有排进来的目标（过了零点逐条补写）时，接在它们后面，保持书写顺序。
+        let anchor = existing.lastIndex { $0.plannedFrom != nil && $0.carryFrom == nil }
+        var lastOrder: String? = anchor.map { existing[$0].order }
+        let upper = anchor.map { $0 + 1 < existing.count ? existing[$0 + 1].order : nil } ?? existing.first?.order
+        func nextOrder() -> String {
+            let order = lastOrder == nil && upper == nil ? "a" : OrderKey.between(lastOrder, upper)
             lastOrder = order
+            return order
+        }
+        var edits: [(type: String, id: String, value: JSONValue?)] = []
+        // 文字 → 这一天里已经有（或马上会有）的那条任务
+        var landed: [String: String] = [:]
+        for block in existing where landed[Self.normalized(block.text.plain)] == nil { landed[Self.normalized(block.text.plain)] = block.id }
+        var carriedCopies: [(key: String, copy: Block, original: Block)] = []
+        for original in pending {
             var attrs = original.attrs
             attrs["carry_from"] = .string(original.id)
             attrs["carried_days"] = .number(Double(original.carriedDays + gap))
             attrs["carried_to"] = nil
-            let copy = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: target.id, order: order,
+            attrs["planned_from"] = nil
+            let copy = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: target.id, order: "",
                              kind: .check, attrs: attrs, text: original.text, createdAt: now)
-            var updated = original
-            updated.attrs["carried_to"] = .string(copy.id)
-            edits.append((RecordType.block, copy.id, copy.json))
+            carriedCopies.append((Self.normalized(original.text.plain), copy, original))
+        }
+        for copy in carriedCopies where landed[copy.key] == nil { landed[copy.key] = copy.copy.id }
+
+        var planCopies: [Block] = []
+        for plan in plans {
+            let key = Self.normalized(plan.text.plain)
+            var updated = plan
+            if let existingID = landed[key] {
+                updated.attrs["planned_to"] = .string(existingID)
+            } else {
+                var attrs: [String: JSONValue] = ["checked": false, "planned_from": .string(plan.id)]
+                attrs["progress_id"] = plan.attrs["progress_id"]
+                let copy = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: target.id, order: nextOrder(),
+                                 kind: .check, attrs: attrs, text: plan.text, createdAt: now)
+                planCopies.append(copy)
+                landed[key] = copy.id
+                updated.attrs["planned_to"] = .string(copy.id)
+            }
+            edits.append((RecordType.block, updated.id, updated.json))
+        }
+        for copy in planCopies { edits.append((RecordType.block, copy.id, copy.json)) }
+        for var item in carriedCopies {
+            item.copy.order = nextOrder()
+            var updated = item.original
+            updated.attrs["carried_to"] = .string(item.copy.id)
+            edits.append((RecordType.block, item.copy.id, item.copy.json))
             edits.append((RecordType.block, updated.id, updated.json))
         }
         try commit(edits)
+    }
+
+    static func normalized(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // ---------------------------------------------------------------- 编辑
@@ -300,7 +361,7 @@ public final class DailyBook: @unchecked Sendable {
     public func add(_ kind: Block.Kind, text: String, to role: Block.SectionRole, on date: String,
                     after: String? = nil, attrs: [String: JSONValue] = [:], now: Date = Date()) throws -> Block? {
         let day = try ensureDay(date, now: now)
-        guard let section = section(role, of: day) else { return nil }
+        guard let section = try section(role, of: day) ?? createSection(role, of: day, now: now) else { return nil }
         let siblings = children(of: section)
         let order: String
         if let after, let index = siblings.firstIndex(where: { $0.id == after }) {
@@ -321,11 +382,24 @@ public final class DailyBook: @unchecked Sendable {
                           kind: kind, attrs: attrs, text: RichText(text), createdAt: now)
         edits.append((RecordType.block, block.id, block.json))
         try commit(edits)
+        // 第二天的页面已经在了（过了零点才写明日目标）：直接排进去。
+        if role == .tomorrow, let next = days.last(where: { $0.date > date }) { try carryOver(into: next, now: now) }
         return block
+    }
+
+    /// 老页面没有的区块（比如「明日目标」是后来加的）在第一次写入时补上，排在最后。
+    private func createSection(_ role: Block.SectionRole, of day: Day, now: Date) throws -> Block? {
+        let titles: [Block.SectionRole: String] = [.todo: "TODO", .spark: "SPARK", .notes: "随记", .tomorrow: "明日目标"]
+        let last = blocks(note: day.noteID).filter { $0.parentID == nil }.map(\.order).max()
+        let section = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: nil, order: OrderKey.after(last), kind: .section,
+                            attrs: ["role": .string(role.rawValue), "title": .string(titles[role] ?? role.rawValue)], createdAt: now)
+        try commit([(RecordType.block, section.id, section.json)])
+        return section
     }
 
     public func setText(_ text: String, of blockID: String) throws {
         guard var block = block(blockID), block.text.plain != text else { return }
+        let before = block.text.plain
         block.text = RichText(text)
         var edits: [(type: String, id: String, value: JSONValue?)] = []
         if block.kind == .check {
@@ -339,6 +413,12 @@ public final class DailyBook: @unchecked Sendable {
             }
         }
         edits.append((RecordType.block, block.id, block.json))
+        // 改写已排进第二天的明日目标：那边还没动过的话一起改。
+        if let to = block.plannedTo, var copy = self.block(to), copy.plannedFrom == block.id, !copy.checked, copy.text.plain == before {
+            copy.text = block.text
+            copy.attrs["progress_id"] = block.attrs["progress_id"]
+            edits.append((RecordType.block, copy.id, copy.json))
+        }
         try commit(edits)
     }
 
@@ -365,10 +445,11 @@ public final class DailyBook: @unchecked Sendable {
     public func delete(_ blockID: String) throws {
         guard let block = block(blockID) else { return }
         var edits: [(type: String, id: String, value: JSONValue?)] = [(RecordType.block, blockID, nil)]
-        // 删掉一个被带过来的任务：原来那天的记录恢复成「未延续」，免得它悬空。
+        // 删掉一个被带过来的任务 = 不做了：原来那天的记录标成「放下了」，以后不会再被带回来。
         if let from = block.carryFrom, var original = self.block(from),
            original.carriedTo == blockID {
             original.attrs["carried_to"] = nil
+            original.attrs["dropped"] = true
             edits.append((RecordType.block, original.id, original.json))
         }
         try commit(edits)
@@ -424,4 +505,48 @@ public final class DailyBook: @unchecked Sendable {
         let palette = ["yellow", "pink", "mint", "blue"]
         return palette[items(.spark, on: date).count % palette.count]
     }
+}
+
+/// 一天的收尾：晚间提醒据此决定提不提醒、提醒什么。
+public struct Evening: Equatable, Sendable {
+    public var date: String
+    public var stats: DayStats
+    public var hasSummary: Bool
+    /// 明日目标的条数
+    public var plans: Int
+    /// 没做完、明天会自动延续的件数
+    public var pending: Int
+
+    public var isComplete: Bool { hasSummary && plans > 0 }
+
+    /// 还差什么（界面上的「还差：…」）。
+    public var missing: [String] {
+        (hasSummary ? [] : ["今日总结"]) + (plans > 0 ? [] : ["明日目标"])
+    }
+
+    /// 晚间通知的文字；都写好了就是 nil（不提醒）。
+    public var nudge: Nudge? {
+        let done = stats.total > 0 ? "今天完成 \(stats.done)/\(stats.total)。" : ""
+        let carry = pending > 0 ? "没做完的 \(pending) 件会自动延续，不用再抄一遍。" : ""
+        switch (hasSummary, plans > 0) {
+        case (true, true):
+            return nil
+        case (false, false):
+            return Nudge(title: "今晚总结", body: done + "用一句话记下今天，再定下明天要做的事。" + carry)
+        case (false, true):
+            return Nudge(title: "今日总结还没写", body: done + "明天的目标定好了，再用一句话记下今天。")
+        case (true, false):
+            return Nudge(title: "明天做什么？", body: "总结写好了。定一两件明天的事，明早会出现在今日目标里。" + carry)
+        }
+    }
+
+    public struct Nudge: Equatable, Sendable {
+        public var title: String
+        public var body: String
+    }
+}
+
+extension Evening {
+    /// 还没到的那几天先排的通用提醒（当天的内容要到那天才知道）。
+    public static let genericNudge: Nudge? = Nudge(title: "今晚总结", body: "用一句话记下今天，再定下明天要做的事。")
 }

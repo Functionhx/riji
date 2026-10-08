@@ -48,16 +48,17 @@ struct DailyBookTests {
         #expect(front < "a")
     }
 
-    @Test func newDayHasThreeSections() throws {
+    @Test func newDayHasFourSections() throws {
         let book = try makeBook()
         let day = try book.ensureDay("2026-10-08", now: monday)
         #expect(book.section(.todo, of: day) != nil)
         #expect(book.section(.spark, of: day) != nil)
         #expect(book.section(.notes, of: day) != nil)
+        #expect(book.section(.tomorrow, of: day) != nil)
         // 再次调用不重复创建
         _ = try book.ensureDay("2026-10-08", now: monday)
         #expect(book.days.count == 1)
-        #expect(book.blocks(note: day.noteID).filter { $0.kind == .section }.count == 3)
+        #expect(book.blocks(note: day.noteID).filter { $0.kind == .section }.count == 4)
     }
 
     @Test func unfinishedTasksCarryOverWithoutRewritingHistory() throws {
@@ -87,13 +88,136 @@ struct DailyBookTests {
         #expect(book.stats(on: "2026-10-07") == DayStats(total: 1, done: 1, carried: 0, sparks: 0, hasContent: true))
     }
 
-    @Test func deletingACarriedTaskReleasesTheOriginal() throws {
+    @Test func deletingACarriedTaskDropsItForGood() throws {
         let book = try makeBook()
         let original = try book.add(.check, text: "sony 继续", to: .todo, on: "2026-10-07", now: monday)!
         try book.ensureDay("2026-10-08", now: monday)
         let carried = book.items(.todo, on: "2026-10-08")[0]
         try book.delete(carried.id)
-        #expect(book.items(.todo, on: "2026-10-07").first { $0.id == original.id }?.carriedTo == nil)
+        let released = try #require(book.items(.todo, on: "2026-10-07").first { $0.id == original.id })
+        #expect(released.carriedTo == nil && released.dropped)
+        // 再打开今天（回到今天、点热力图）不会把它又带回来
+        try book.ensureDay("2026-10-08", now: monday)
+        #expect(book.items(.todo, on: "2026-10-08").isEmpty)
+        // 放下的事不算在原来那天的总数里
+        #expect(book.stats(on: "2026-10-07").total == 0)
+    }
+
+    @Test func tomorrowGoalsBecomeNextDaysGoals() throws {
+        let book = try makeBook()
+        try book.add(.check, text: "sony 继续", to: .todo, on: "2026-10-07", now: monday)
+        let circuit = try book.add(.check, text: "电路 20 讲", to: .tomorrow, on: "2026-10-07", now: monday)!
+        let report = try book.add(.check, text: "写周报", to: .tomorrow, on: "2026-10-07", now: monday)!
+        let same = try book.add(.check, text: "Sony 继续 ", to: .tomorrow, on: "2026-10-07", now: monday)!
+        try book.add(.check, text: "  ", to: .tomorrow, on: "2026-10-07", now: monday)
+        // 写明日目标不会提前生成第二天
+        #expect(book.day("2026-10-08") == nil)
+
+        try book.ensureDay("2026-10-08", now: monday)
+        let today = book.items(.todo, on: "2026-10-08")
+        // 先是昨天定下的目标，再是延续的事；重名的只留一条，空白的不带
+        #expect(today.map(\.text.plain) == ["电路 20 讲", "写周报", "sony 继续"])
+        #expect(today[0].plannedFrom == circuit.id && today[0].progressID == circuit.progressID && !today[0].checked)
+        #expect(today[2].carryFrom != nil && today[2].plannedFrom == nil)
+        let plans = Dictionary(uniqueKeysWithValues: book.items(.tomorrow, on: "2026-10-07").map { ($0.id, $0) })
+        #expect(plans[circuit.id]?.plannedTo == today[0].id)
+        #expect(plans[report.id]?.plannedTo == today[1].id)
+        #expect(plans[same.id]?.plannedTo == today[2].id)
+        // 再打开一次不重复
+        try book.ensureDay("2026-10-08", now: monday)
+        #expect(book.items(.todo, on: "2026-10-08").count == 3)
+
+        // 目标没做完，第三天照常延续，但不再标「昨日定」
+        try book.ensureDay("2026-10-09", now: monday)
+        let third = book.items(.todo, on: "2026-10-09")
+        #expect(third.map(\.text.plain) == ["电路 20 讲", "写周报", "sony 继续"])
+        #expect(third.allSatisfy { $0.plannedFrom == nil && $0.carryFrom != nil })
+    }
+
+    @Test func goalsWrittenAfterMidnightLandOnTheNewDay() throws {
+        let book = try makeBook()
+        try book.add(.check, text: "背单词", to: .todo, on: "2026-10-07", now: monday)
+        try book.ensureDay("2026-10-08", now: monday)  // 过了零点，今天的页面已经生成
+        let goal = try book.add(.check, text: "整理笔记", to: .tomorrow, on: "2026-10-07", now: monday)!
+        try book.add(.check, text: "跑步", to: .tomorrow, on: "2026-10-07", now: monday)
+        let today = book.items(.todo, on: "2026-10-08")
+        #expect(today.map(\.text.plain) == ["整理笔记", "跑步", "背单词"])
+        #expect(book.block(goal.id)?.plannedTo == today[0].id)
+        // 今天已经手写过的事，补写同名目标不重复
+        try book.add(.check, text: "背单词", to: .tomorrow, on: "2026-10-07", now: monday)
+        #expect(book.items(.todo, on: "2026-10-08").count == 3)
+    }
+
+    @Test func goalsNeverLandOnPastDays() throws {
+        let book = try makeBook()
+        try book.ensureDay("2026-10-07", now: monday)
+        try book.ensureDay("2026-10-08", now: monday)
+        let later = Date(timeIntervalSince1970: 1_791_857_000)  // 2026-10-13
+        let goal = try book.add(.check, text: "补的目标", to: .tomorrow, on: "2026-10-07", now: later)!
+        #expect(book.items(.todo, on: "2026-10-08").isEmpty)
+        #expect(book.block(goal.id)?.plannedTo == nil)
+    }
+
+    @Test func editingAGoalFollowsItUntilTouched() throws {
+        let book = try makeBook()
+        let goal = try book.add(.check, text: "电路 20 讲", to: .tomorrow, on: "2026-10-07", now: monday)!
+        try book.ensureDay("2026-10-08", now: monday)
+        let copyID = try #require(book.block(goal.id)?.plannedTo)
+        try book.setText("电路 21 讲", of: goal.id)
+        #expect(book.block(copyID)?.text.plain == "电路 21 讲")
+        try book.setChecked(true, of: copyID)
+        try book.setText("电路 22 讲", of: goal.id)
+        #expect(book.block(copyID)?.text.plain == "电路 21 讲")
+    }
+
+    @Test func oldPagesGetTheTomorrowSectionOnFirstWrite() throws {
+        let book = try makeBook()
+        let day = try book.ensureDay("2026-10-07", now: monday)
+        let section = try #require(book.section(.tomorrow, of: day))
+        try book.store.write([(RecordType.block, section.id, nil)])  // 模拟加这个区块之前的老页面
+        #expect(book.section(.tomorrow, of: day) == nil)
+        try book.add(.check, text: "写周报", to: .tomorrow, on: "2026-10-07", now: monday)
+        #expect(book.items(.tomorrow, on: "2026-10-07").map(\.text.plain) == ["写周报"])
+        let roles = book.blocks(note: day.noteID).filter { $0.kind == .section }.sorted { $0.order < $1.order }.compactMap(\.role)
+        #expect(roles == [.todo, .spark, .notes, .tomorrow])
+    }
+
+    @Test func eveningNudgeOnlyAsksForWhatIsMissing() throws {
+        let book = try makeBook()
+        let date = "2026-10-08"
+        let done = try book.add(.check, text: "徐涛马原", to: .todo, on: date, now: monday)!
+        try book.setChecked(true, of: done.id)
+        try book.add(.check, text: "sony 继续", to: .todo, on: date, now: monday)
+
+        var evening = book.evening(on: date)
+        #expect(evening.missing == ["今日总结", "明日目标"])
+        #expect(evening.nudge?.title == "今晚总结")
+        #expect(evening.nudge?.body.contains("今天完成 1/2") == true)
+        #expect(evening.nudge?.body.contains("没做完的 1 件会自动延续") == true)
+
+        try book.add(.check, text: "写周报", to: .tomorrow, on: date, now: monday)
+        evening = book.evening(on: date)
+        #expect(evening.missing == ["今日总结"] && evening.nudge?.title == "今日总结还没写")
+
+        try book.setSummary("马原过完一轮。", on: date)
+        evening = book.evening(on: date)
+        #expect(evening.isComplete && evening.nudge == nil)
+
+        // 只写了总结
+        try book.ensureDay("2026-10-09", now: monday)
+        try book.setSummary("休息日", on: "2026-10-09")
+        #expect(book.evening(on: "2026-10-09").nudge?.title == "明天做什么？")
+    }
+
+    @Test func morningAsksToBackfillYesterday() throws {
+        let book = try makeBook()
+        #expect(book.missedEvening(today: "2026-10-08") == nil)  // 昨天没有页面
+        try book.ensureDay("2026-10-07", now: monday)
+        #expect(book.missedEvening(today: "2026-10-08") == nil)  // 空白的一天不催
+        try book.add(.spark, text: "参考文献必填", to: .spark, on: "2026-10-07", now: monday)
+        #expect(book.missedEvening(today: "2026-10-08") == "2026-10-07")
+        try book.setSummary("写了一点", on: "2026-10-07")
+        #expect(book.missedEvening(today: "2026-10-08") == nil)
     }
 
     @Test func progressIsRecognisedAndAdvancedOnCheck() throws {

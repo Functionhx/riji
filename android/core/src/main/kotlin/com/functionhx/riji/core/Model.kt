@@ -40,7 +40,7 @@ enum class BlockKind(val wire: String) { SECTION("section"), PARAGRAPH("paragrap
     companion object { fun of(wire: String?) = entries.firstOrNull { it.wire == wire } }
 }
 
-enum class SectionRole(val wire: String) { TODO("todo"), SPARK("spark"), NOTES("notes");
+enum class SectionRole(val wire: String) { TODO("todo"), SPARK("spark"), NOTES("notes"), TOMORROW("tomorrow");
     companion object { fun of(wire: String?) = entries.firstOrNull { it.wire == wire } }
 }
 
@@ -60,6 +60,11 @@ data class Block(
     val carryFrom: String? get() = attrs["carry_from"]?.string
     val carriedTo: String? get() = attrs["carried_to"]?.string
     val carriedDays: Int get() = attrs["carried_days"]?.int ?: 0
+    /** 被延续过来的任务删掉后，原块记为「放下了」，不再被带走。 */
+    val dropped: Boolean get() = attrs["dropped"]?.bool ?: false
+    /** 明日目标 → 次日今日目标：目标块记 planned_to，次日的任务记 planned_from。 */
+    val plannedTo: String? get() = attrs["planned_to"]?.string
+    val plannedFrom: String? get() = attrs["planned_from"]?.string
     val progressId: String? get() = attrs["progress_id"]?.string
     val color: String get() = attrs["color"]?.string ?: "yellow"
 
