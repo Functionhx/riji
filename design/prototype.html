@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily · 视觉方向原型</title>
+<style>
+/* ============================================================
+   Daily 视觉方向原型（2026-10-08）
+   三个方向 × (Android「今天」+ macOS 主窗口)。内容取自 1007 那则备忘录。
+   只用系统字体，纯 HTML/CSS，热力图由页尾的小脚本生成。
+   ============================================================ */
+:root {
+  --sans: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--sans); background: #e9e7e1; color: #1d1c1a; }
+.page-head { max-width: 1480px; margin: 0 auto; padding: 40px 32px 8px; }
+.page-head h1 { font-family: var(--serif); font-weight: 600; font-size: 34px; margin: 0 0 6px; letter-spacing: .01em; }
+.page-head p { margin: 0; color: #6b6860; font-size: 14px; line-height: 1.7; max-width: 860px; }
+.tabs { display: flex; gap: 8px; margin: 22px 0 0; flex-wrap: wrap; }
+.tabs button { font: inherit; font-size: 14px; border: 1px solid #c9c5ba; background: transparent; padding: 8px 16px; border-radius: 999px; cursor: pointer; color: #3b3934; }
+.tabs button[aria-selected="true"] { background: #1d1c1a; color: #faf9f5; border-color: #1d1c1a; }
+.direction { display: none; max-width: 1480px; margin: 0 auto; padding: 24px 32px 64px; }
+.direction.is-on { display: block; }
+.direction > header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.direction > header h2 { margin: 0; font-size: 22px; font-family: var(--serif); }
+.direction > header p { margin: 0; color: #6b6860; font-size: 14px; }
+.stage { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; }
+.caption { font: 12px var(--mono); color: #8a867c; margin: 12px 4px 0; letter-spacing: .04em; }
+
+/* ---------- 设备外框 ---------- */
+.phone { width: 372px; height: 780px; border-radius: 48px; padding: 12px; background: #111; box-shadow: 0 30px 60px -30px rgba(0,0,0,.5), inset 0 0 0 2px #2a2a2a; flex: none; }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 37px; overflow: hidden; }
+.statusbar { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; font: 600 13px var(--sans); }
+.statusbar .cam { width: 12px; height: 12px; border-radius: 50%; background: #000; position: absolute; left: 50%; top: 14px; transform: translateX(-50%); }
+.mac { width: 1000px; height: 640px; border-radius: 14px; overflow: hidden; box-shadow: 0 30px 70px -30px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.08); flex: none; display: grid; }
+.lights { display: flex; gap: 8px; padding: 18px 18px 10px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, var(--cell, 9px)); gap: var(--gap, 3px); }
+.heat i { width: var(--cell, 9px); height: var(--cell, 9px); border-radius: var(--cell-r, 2px); background: var(--l0); }
+.heat i[data-l="1"] { background: var(--l1); } .heat i[data-l="2"] { background: var(--l2); }
+.heat i[data-l="3"] { background: var(--l3); } .heat i[data-l="4"] { background: var(--l4); }
+.heat i.today { outline: 1.5px solid var(--today, currentColor); outline-offset: 1px; }
+
+/* =========================== A · 纸与墨 =========================== */
+.A { --paper: #faf8f3; --ink: #1d1c1a; --ink2: #55524a; --ink3: #8f8b80; --line: #e6e2d8; --ochre: #b5762a; --sticky: #f8eaa6; --sticky2: #f6d7d9; --sticky3: #d6ecdf;
+  --l0: #ece8de; --l1: #d9d2bf; --l2: #b9ae8f; --l3: #8a7d5a; --l4: #4f4632; --today: #b5762a; }
+.A .screen, .A .mac { background: var(--paper); color: var(--ink); }
+.A .eyebrow { font: 11px var(--mono); letter-spacing: .12em; color: var(--ink3); text-transform: uppercase; }
+.A .day-title { font-family: var(--serif); font-weight: 600; font-size: 40px; line-height: 1.1; margin: 6px 0 2px; letter-spacing: .01em; }
+.A .day-sub { color: var(--ink2); font-size: 14px; }
+.A .dayline { position: relative; height: 2px; background: var(--line); margin: 16px 0 6px; }
+.A .dayline b { position: absolute; inset: 0 auto 0 0; width: 41%; background: var(--ink); }
+.A .dayline span { position: absolute; left: 41%; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--ochre); transform: translateX(-50%); box-shadow: 0 0 0 3px var(--paper); }
+.A .dayline-legend { display: flex; justify-content: space-between; font: 10.5px var(--mono); color: var(--ink3); }
+.A section { margin-top: 22px; }
+.A .sec-head { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 4px; }
+.A .sec-head h3 { margin: 0; font: 11px var(--mono); letter-spacing: .14em; color: var(--ink3); font-weight: 400; }
+.A .sec-head em { font: 11px var(--mono); font-style: normal; color: var(--ink2); }
+.A .task { display: flex; align-items: center; gap: 12px; padding: 9px 0; font-size: 15px; }
+.A .box { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink3); flex: none; display: grid; place-items: center; }
+.A .task.done .box { background: var(--ink); border-color: var(--ink); }
+.A .task.done .box::after { content: ""; width: 5px; height: 9px; border: solid var(--paper); border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.A .task.done .t { color: var(--ink3); text-decoration: line-through; text-decoration-color: var(--line); }
+.A .t { flex: 1; }
+.A .carry { font: 11px var(--mono); color: var(--ochre); border: 1px solid #ead2ad; padding: 1px 6px; border-radius: 4px; }
+.A .meter { font: 11px var(--mono); color: var(--ink2); white-space: nowrap; }
+.A .meter b { color: var(--ink); font-weight: 400; letter-spacing: -.02em; }
+.A .from { font: 10.5px var(--mono); color: var(--ink3); }
+.A .stickies { display: flex; gap: 12px; overflow: hidden; padding: 10px 2px 6px; }
+.A .sticky { flex: none; width: 128px; min-height: 92px; padding: 14px 12px 10px; background: var(--sticky); font: 14px/1.5 "Kaiti SC", "STKaiti", var(--serif); color: #3a372c; box-shadow: 0 10px 18px -12px rgba(60,50,20,.5); position: relative; transform: rotate(-1.4deg); }
+.A .sticky:nth-child(2) { background: var(--sticky2); transform: rotate(1.2deg); }
+.A .sticky:nth-child(3) { background: var(--sticky3); transform: rotate(-.6deg); }
+.A .sticky::before { content: ""; position: absolute; top: -7px; left: 50%; width: 44px; height: 14px; transform: translateX(-50%) rotate(2deg); background: rgba(218,209,186,.7); }
+.A .sticky small { display: block; font: 10px var(--mono); color: rgba(58,55,44,.55); margin-top: 8px; }
+.A .note-line { font-family: var(--serif); font-size: 16px; color: var(--ink2); margin: 10px 0 0; }
+.A .capture { position: absolute; left: 16px; right: 16px; bottom: 70px; height: 50px; border-radius: 16px; background: var(--ink); color: #cfcabd; display: flex; align-items: center; padding: 0 8px 0 18px; gap: 10px; font-size: 14px; box-shadow: 0 16px 30px -18px rgba(0,0,0,.6); }
+.A .capture span { flex: 1; }
+.A .capture i { width: 34px; height: 34px; border-radius: 11px; background: #33312c; display: grid; place-items: center; font-style: normal; color: #f2eee4; font-size: 15px; }
+.A .capture i:last-child { background: var(--sticky); color: #3a372c; font-weight: 700; }
+.A .tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; display: flex; justify-content: space-around; align-items: center; border-top: 1px solid var(--line); background: var(--paper); font-size: 11px; color: var(--ink3); }
+.A .tabbar b { color: var(--ink); font-weight: 600; }
+.A .tabbar div { display: grid; justify-items: center; gap: 3px; }
+.A .tabbar div::before { content: ""; width: 18px; height: 3px; border-radius: 2px; background: transparent; }
+.A .tabbar div.on::before { background: var(--ink); }
+.A .body { padding: 6px 24px 140px; }
+/* macOS A */
+.A .mac { grid-template-columns: 220px 1fr 270px; }
+.A .side { background: #f2efe7; border-right: 1px solid var(--line); padding: 0 0 16px; }
+.A .side .brand { padding: 6px 20px 14px; font-family: var(--serif); font-size: 18px; font-weight: 600; }
+.A .side .brand span { color: var(--ochre); font-style: italic; margin-right: 4px; }
+.A .nav { padding: 0 10px; }
+.A .nav a { display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink2); text-decoration: none; }
+.A .nav a.on { background: #e6e1d4; color: var(--ink); font-weight: 600; }
+.A .nav a small { font: 11px var(--mono); color: var(--ink3); }
+.A .nav h4 { font: 10.5px var(--mono); letter-spacing: .14em; color: var(--ink3); margin: 18px 10px 6px; font-weight: 400; }
+.A .main { overflow: hidden; padding: 34px 56px; }
+.A .main .paper { max-width: 560px; margin: 0 auto; }
+.A .rail { border-left: 1px solid var(--line); padding: 30px 22px; display: grid; gap: 26px; align-content: start; }
+.A .rail h4 { margin: 0 0 10px; font: 10.5px var(--mono); letter-spacing: .14em; color: var(--ink3); font-weight: 400; }
+.A .prog { display: grid; gap: 10px; font-size: 13px; }
+.A .prog div { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
+.A .prog .bar { grid-column: 1 / -1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.A .prog .bar b { display: block; height: 100%; background: var(--ink); }
+.A .prog small { font: 11px var(--mono); color: var(--ink3); }
+.A .site { border: 1px dashed #d8d1bf; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--ink2); line-height: 1.6; }
+.A .site b { color: var(--ink); }
+.A .site .pill { display: inline-block; margin-top: 8px; font: 11px var(--mono); background: var(--ink); color: var(--paper); padding: 4px 10px; border-radius: 999px; }
+.A .toolbar { display: flex; gap: 6px; justify-content: flex-end; padding: 0 0 18px; }
+.A .toolbar span { font: 11px var(--mono); color: var(--ink3); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+
+/* =========================== B · 夜航 =========================== */
+.B { --bg: #0c0f14; --panel: rgba(255,255,255,.045); --edge: rgba(255,255,255,.08); --ink: #eef1f5; --ink2: #a3acb9; --ink3: #687282; --green: #5fe3a1; --amber: #f2b45a; --violet: #a48bff;
+  --l0: #18202a; --l1: #1d4436; --l2: #23744f; --l3: #34b073; --l4: #6ff0ad; --today: #eef1f5; }
+.B .screen, .B .mac { background: radial-gradient(120% 60% at 80% -10%, #1b2740 0%, transparent 60%), radial-gradient(90% 50% at -10% 30%, #142a24 0%, transparent 55%), var(--bg); color: var(--ink); }
+.B .body { padding: 4px 18px 130px; }
+.B .top { display: flex; justify-content: space-between; align-items: flex-end; margin: 8px 4px 14px; }
+.B .top h3 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.01em; }
+.B .top p { margin: 2px 0 0; color: var(--ink2); font-size: 13px; }
+.B .avatar { width: 36px; height: 36px; border-radius: 12px; background: linear-gradient(135deg, #5fe3a1, #3a7bd5); display: grid; place-items: center; font-weight: 800; color: #0c0f14; font-style: italic; }
+.B .card { background: var(--panel); border: 1px solid var(--edge); border-radius: 22px; padding: 16px; backdrop-filter: blur(12px); }
+.B .hero { display: grid; gap: 12px; }
+.B .hero .row { display: flex; justify-content: space-between; align-items: baseline; }
+.B .big { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+.B .big small { font-size: 13px; color: var(--ink2); font-weight: 500; margin-left: 6px; letter-spacing: 0; }
+.B .label { font: 10.5px var(--mono); letter-spacing: .14em; color: var(--ink3); text-transform: uppercase; }
+.B .heat { --cell: 8px; --gap: 3px; }
+.B .ring-row { display: flex; gap: 12px; margin-top: 12px; }
+.B .mini { flex: 1; padding: 12px 14px; }
+.B .mini b { display: block; font-size: 20px; margin-top: 4px; }
+.B .mini.g b { color: var(--green); } .B .mini.a b { color: var(--amber); } .B .mini.v b { color: var(--violet); }
+.B .list { margin-top: 12px; padding: 6px 4px; }
+.B .item { display: flex; align-items: center; gap: 12px; padding: 11px 12px; font-size: 15px; border-radius: 14px; }
+.B .item + .item { border-top: 1px solid var(--edge); border-radius: 0; }
+.B .chk { width: 22px; height: 22px; border-radius: 8px; border: 1.5px solid #3a4452; flex: none; display: grid; place-items: center; }
+.B .item.done .chk { background: var(--green); border-color: var(--green); box-shadow: 0 0 14px rgba(95,227,161,.45); }
+.B .item.done .chk::after { content: ""; width: 5px; height: 10px; border: solid #0c0f14; border-width: 0 2.4px 2.4px 0; transform: translateY(-1px) rotate(45deg); }
+.B .item.done .t { color: var(--ink3); }
+.B .t { flex: 1; }
+.B .tag { font: 11px var(--mono); padding: 2px 7px; border-radius: 6px; }
+.B .tag.carry { color: var(--amber); background: rgba(242,180,90,.12); }
+.B .tag.prog { color: var(--green); background: rgba(95,227,161,.1); }
+.B .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.B .chip { padding: 8px 12px; border-radius: 12px; background: rgba(164,139,255,.1); border: 1px solid rgba(164,139,255,.25); color: #d8cfff; font-size: 13px; }
+.B .chip::before { content: "✦ "; color: var(--violet); }
+.B .dock { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; border-radius: 22px; background: rgba(20,26,34,.85); border: 1px solid var(--edge); backdrop-filter: blur(16px); }
+.B .dock span { width: 46px; height: 42px; border-radius: 16px; display: grid; place-items: center; color: var(--ink3); font-size: 17px; }
+.B .dock span.on { background: rgba(255,255,255,.08); color: var(--ink); }
+.B .dock span.add { background: var(--green); color: #0c0f14; font-weight: 800; font-size: 22px; box-shadow: 0 0 20px rgba(95,227,161,.5); }
+/* macOS B */
+.B .mac { grid-template-columns: 68px 300px 1fr; }
+.B .icons { border-right: 1px solid var(--edge); display: grid; align-content: start; justify-items: center; gap: 12px; padding-top: 4px; }
+.B .icons .lights { flex-direction: column; padding: 18px 0 8px; gap: 7px; }
+.B .icons span { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; color: var(--ink3); font-size: 16px; }
+.B .icons span.on { background: rgba(255,255,255,.08); color: var(--ink); }
+.B .col { border-right: 1px solid var(--edge); padding: 28px 18px; display: grid; gap: 14px; align-content: start; }
+.B .day-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; color: var(--ink2); }
+.B .day-row.on { background: rgba(95,227,161,.08); color: var(--ink); box-shadow: inset 2px 0 0 var(--green); }
+.B .day-row small { font: 11px var(--mono); color: var(--ink3); }
+.B .doc { padding: 34px 44px; overflow: hidden; }
+.B .doc h3 { margin: 0; font-size: 28px; font-weight: 800; }
+.B .doc .sub { color: var(--ink2); font-size: 13px; margin: 4px 0 20px; }
+.B .grid2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; }
+.B .shot { height: 96px; border-radius: 14px; margin-top: 12px; background: linear-gradient(135deg, #1a2a22, #13202c); border: 1px solid var(--edge); display: grid; place-items: center; }
+.B .publish { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding: 12px 16px; border-radius: 16px; background: linear-gradient(90deg, rgba(95,227,161,.12), rgba(58,123,213,.12)); border: 1px solid rgba(95,227,161,.25); font-size: 13px; }
+.B .publish b { color: var(--green); }
+.B .publish span.btn { white-space: nowrap; flex: none; margin-left: 12px; font-size: 12px; background: var(--green); color: #0c0f14; padding: 6px 12px; border-radius: 10px; font-weight: 700; }
+
+/* =========================== C · 日晷 =========================== */
+.C { --ink: #24203a; --ink2: #5b5675; --ink3: #8d88a6; --glass: rgba(255,255,255,.55); --edge: rgba(255,255,255,.7); --sun: #ff9a62; --done: #6b5cff;
+  --l0: rgba(36,32,58,.07); --l1: #d6cdfb; --l2: #b0a1f6; --l3: #8a74ef; --l4: #5b42d8; --today: #ff7a45; }
+.C .screen, .C .mac { background: linear-gradient(165deg, #ffe3cf 0%, #f6d9f0 38%, #d9dcff 72%, #cfe8ff 100%); color: var(--ink); }
+.C .body { padding: 2px 20px 130px; }
+.C .ringwrap { position: relative; width: 236px; height: 236px; margin: 8px auto 4px; }
+.C .ringwrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.C .ring-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.C .ring-center b { font-size: 46px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.C .ring-center span { font-size: 13px; color: var(--ink2); margin-top: 6px; }
+.C .ring-center small { font: 11px var(--mono); color: var(--ink3); margin-top: 8px; }
+.C .legend { display: flex; justify-content: center; gap: 16px; font-size: 11.5px; color: var(--ink2); margin-bottom: 10px; }
+.C .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.C .glass { background: var(--glass); border: 1px solid var(--edge); border-radius: 24px; padding: 14px 16px; backdrop-filter: blur(18px) saturate(1.3); box-shadow: 0 18px 40px -28px rgba(70,50,140,.5); }
+.C .timeline { position: relative; margin-top: 12px; padding-left: 20px; }
+.C .timeline::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(var(--sun), var(--done)); border-radius: 2px; opacity: .45; }
+.C .ev { position: relative; padding: 8px 0 8px 8px; display: flex; gap: 10px; align-items: center; font-size: 14.5px; }
+.C .ev::before { content: ""; position: absolute; left: -19px; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--done); transform: translateY(-50%); }
+.C .ev.done::before { background: var(--done); }
+.C .ev.now::before { border-color: var(--sun); box-shadow: 0 0 0 5px rgba(255,154,98,.25); }
+.C .ev time { font: 11px var(--mono); color: var(--ink3); width: 38px; flex: none; }
+.C .ev .t { flex: 1; }
+.C .ev.done .t { color: var(--ink3); }
+.C .badge { font: 11px var(--mono); padding: 2px 8px; border-radius: 999px; background: rgba(255,154,98,.18); color: #c25a24; }
+.C .badge.p { background: rgba(107,92,255,.14); color: var(--done); }
+.C .sparks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.C .bubble { padding: 9px 13px; border-radius: 18px 18px 18px 6px; background: #fff; font-size: 13px; box-shadow: 0 8px 18px -12px rgba(70,50,140,.5); }
+.C .bubble::before { content: "✺ "; color: var(--sun); }
+.C .orb { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(from 200deg, var(--sun), #ff6fa8, var(--done), var(--sun)); display: grid; place-items: center; box-shadow: 0 16px 34px -12px rgba(107,92,255,.7); }
+.C .orb::after { content: "+"; width: 54px; height: 54px; border-radius: 50%; background: rgba(255,255,255,.92); display: grid; place-items: center; font-size: 28px; color: var(--ink); }
+.C .side-icons { position: absolute; bottom: 36px; left: 30px; right: 30px; display: flex; justify-content: space-between; font-size: 12px; color: var(--ink2); pointer-events: none; }
+/* macOS C */
+.C .mac { grid-template-columns: 340px 1fr; }
+.C .left { padding: 0 26px 24px; display: grid; align-content: start; gap: 14px; border-right: 1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.25); }
+.C .left .ringwrap { width: 200px; height: 200px; margin: 0 auto; }
+.C .left .ring-center b { font-size: 38px; }
+.C .right { padding: 34px 48px; overflow: hidden; display: grid; align-content: start; gap: 16px; }
+.C .right h3 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.C .right .sub { color: var(--ink2); font-size: 13px; margin-top: -10px; }
+.C .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.C .heat { --cell: 10px; --gap: 3px; --cell-r: 3px; }
+.C .weekbars { display: flex; align-items: flex-end; gap: 8px; height: 70px; margin-top: 10px; }
+.C .weekbars i { flex: 1; border-radius: 8px 8px 4px 4px; background: linear-gradient(var(--done), #b0a1f6); opacity: .85; }
+.C .weekbars i.today { background: linear-gradient(var(--sun), #ffc49f); opacity: 1; }
+.C .weekdays { display: flex; gap: 8px; font: 10.5px var(--mono); color: var(--ink3); margin-top: 6px; }
+.C .weekdays span { flex: 1; text-align: center; }
+
+/* ---------- 对比说明 ---------- */
+.notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+.notes div { background: #f7f5ef; border-radius: 14px; padding: 16px 18px; font-size: 13.5px; line-height: 1.7; color: #4a473f; }
+.notes b { display: block; color: #1d1c1a; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>Daily · 三个视觉方向</h1>
+  <p>同一天（10 月 8 日）同一份内容，三种气质。每个方向都画了 Android 的「今天」和 macOS 主窗口。挑一个整体方向，或者说「A 的排版 + B 的热力图」这样混搭都行；功能（备忘录兼容、TODO 延续、长期进度、晚间总结、和网站连接）在三个方向里是一样的。</p>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-dir="A">A · 纸与墨</button>
+    <button role="tab" aria-selected="false" data-dir="B">B · 夜航</button>
+    <button role="tab" aria-selected="false" data-dir="C">C · 日晷</button>
+  </div>
+</div>
+
+<!-- ================================ A ================================ -->
+<div class="direction A is-on" id="dir-A">
+  <header><h2>A · 纸与墨</h2><p>网站的延续：暖白纸、墨色、宋体标题、等宽小标签；Spark 是一排便利贴；今天的时间是一条墨线。安静、像一本好本子。</p></header>
+  <div class="stage">
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>10:22</span><i class="cam"></i><span>5G ▮▮▮ 82%</span></div>
+        <div class="body">
+          <div class="eyebrow">2026 · 10 · 08 · THU · 连续 12 天</div>
+          <div class="day-title">10 月 8 日</div>
+          <div class="day-sub">星期四 · 今天还剩 13 小时 38 分</div>
+          <div class="dayline"><b></b><span></span></div>
+          <div class="dayline-legend"><span>06:00</span><span>现在 10:22</span><span>24:00</span></div>
+          <section>
+            <div class="sec-head"><h3>TODO</h3><em>2 / 5</em></div>
+            <div class="task"><span class="box"></span><span class="t">英语单词</span><span class="carry">↻ 2 天</span></div>
+            <div class="task done"><span class="box"></span><span class="t">徐涛马原</span></div>
+            <div class="task done"><span class="box"></span><span class="t">电路 18 讲</span><span class="meter"><b>▓▓▓▓░░░░░</b> 18/40</span></div>
+            <div class="task"><span class="box"></span><span class="t">每日日志提醒功能</span><span class="from">← Spark</span></div>
+            <div class="task"><span class="box"></span><span class="t">sony 继续</span></div>
+          </section>
+          <section>
+            <div class="sec-head"><h3>SPARK</h3><em>3 张</em></div>
+            <div class="stickies">
+              <div class="sticky">微信文件传输助手分析历史<small>10:05</small></div>
+              <div class="sticky">参考文献必填<small>09:41</small></div>
+              <div class="sticky">继续浏览·全部文章？<small>昨天</small></div>
+            </div>
+          </section>
+          <section>
+            <div class="sec-head"><h3>随记</h3><em></em></div>
+            <p class="note-line">感觉黑夜模式下更好看？</p>
+          </section>
+        </div>
+        <div class="capture"><span>记一条…</span><i>🎙</i><i>📷</i><i>＋</i></div>
+        <div class="tabbar"><div class="on"><b>今天</b></div><div>时间线</div><div>进度</div><div>我</div></div>
+      </div></div>
+      <p class="caption">ANDROID · 今天</p>
+    </div>
+    <div>
+      <div class="mac">
+        <aside class="side">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="brand"><span>ƒ</span>Daily</div>
+          <nav class="nav">
+            <a class="on" href="#">今天 <small>2/5</small></a>
+            <a href="#">收件箱 <small>3</small></a>
+            <a href="#">全部笔记 <small>105</small></a>
+            <h4>进行中</h4>
+            <a href="#">电路 <small>18/40</small></a>
+            <a href="#">英语单词 <small>26 天</small></a>
+            <a href="#">徐涛马原 <small>第 6 章</small></a>
+            <h4>月份</h4>
+            <a href="#">2026 · 10 <small>8</small></a>
+            <a href="#">2026 · 09 <small>16</small></a>
+            <a href="#">2026 · 08 <small>32</small></a>
+          </nav>
+        </aside>
+        <main class="main">
+          <div class="toolbar"><span>Aa 格式</span><span>☑ 清单</span><span>▦ 表格</span><span>⌘K 链接</span><span>🔒 私密</span></div>
+          <div class="paper">
+            <div class="eyebrow">2026 · 10 · 08 · THU</div>
+            <div class="day-title">10 月 8 日</div>
+            <div class="dayline"><b></b><span></span></div>
+            <section>
+              <div class="sec-head"><h3>TODO</h3><em>2 / 5</em></div>
+              <div class="task"><span class="box"></span><span class="t">英语单词</span><span class="carry">↻ 2 天</span></div>
+              <div class="task done"><span class="box"></span><span class="t">徐涛马原</span></div>
+              <div class="task done"><span class="box"></span><span class="t">电路 18 讲</span><span class="meter"><b>▓▓▓▓░░░░░</b> 18/40</span></div>
+              <div class="task"><span class="box"></span><span class="t">每日日志提醒功能</span><span class="from">← Spark</span></div>
+            </section>
+            <section>
+              <div class="sec-head"><h3>SPARK</h3><em>3 张</em></div>
+              <div class="stickies">
+                <div class="sticky">微信文件传输助手分析历史<small>10:05</small></div>
+                <div class="sticky">参考文献必填<small>09:41</small></div>
+                <div class="sticky">继续浏览·全部文章？<small>昨天</small></div>
+              </div>
+            </section>
+          </div>
+        </main>
+        <aside class="rail">
+          <div><h4>今年</h4><div class="heat" data-heat="26" style="--cell:7px;--gap:2px"></div></div>
+          <div><h4>进度</h4>
+            <div class="prog">
+              <div><span>电路</span><small>18/40</small><span class="bar"><b style="width:45%"></b></span></div>
+              <div><span>英语单词</span><small>26/60 天</small><span class="bar"><b style="width:43%"></b></span></div>
+              <div><span>马原</span><small>6/8 章</small><span class="bar"><b style="width:75%"></b></span></div>
+            </div>
+          </div>
+          <div class="site"><b>网站上公开</b><br>今日 2/5 · 连续 12 天 · 电路 18/40<br>内容不公开，只公开这几个数字。<br><span class="pill">今晚发成日志 →</span></div>
+        </aside>
+      </div>
+      <p class="caption">MACOS · 主窗口</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================ B ================================ -->
+<div class="direction B" id="dir-B">
+  <header><h2>B · 夜航</h2><p>深色优先（你说黑夜模式更好看）：热力图是主角，完成是会发光的绿；玻璃卡片、底部浮动坞。像一块仪表盘，数据感强。</p></header>
+  <div class="stage">
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>22:30</span><i class="cam"></i><span>5G ▮▮▮ 61%</span></div>
+        <div class="body">
+          <div class="top"><div><h3>今天</h3><p>10 月 8 日 · 星期四</p></div><div class="avatar">ƒ</div></div>
+          <div class="card hero">
+            <div class="row"><div><div class="label">STREAK</div><div class="big">12<small>天连续记录</small></div></div><div class="label">2026</div></div>
+            <div class="heat" data-heat="26" style="--cell:8px;--gap:2.6px"></div>
+          </div>
+          <div class="ring-row">
+            <div class="card mini g"><div class="label">完成</div><b>2 / 5</b></div>
+            <div class="card mini a"><div class="label">延续</div><b>1</b></div>
+            <div class="card mini v"><div class="label">SPARK</div><b>3</b></div>
+          </div>
+          <div class="card list">
+            <div class="item"><span class="chk"></span><span class="t">英语单词</span><span class="tag carry">↻2</span></div>
+            <div class="item done"><span class="chk"></span><span class="t">徐涛马原</span></div>
+            <div class="item done"><span class="chk"></span><span class="t">电路 18 讲</span><span class="tag prog">18/40</span></div>
+            <div class="item"><span class="chk"></span><span class="t">每日日志提醒功能</span></div>
+          </div>
+          <div class="chips"><span class="chip">微信文件传输助手分析历史</span><span class="chip">参考文献必填</span></div>
+        </div>
+        <div class="dock"><span class="on">◉</span><span>☰</span><span class="add">＋</span><span>▤</span><span>⚙</span></div>
+      </div></div>
+      <p class="caption">ANDROID · 今天（晚上）</p>
+    </div>
+    <div>
+      <div class="mac">
+        <div class="icons"><div class="lights"><i></i><i></i><i></i></div><span class="on">◉</span><span>✦</span><span>▤</span><span>☰</span><span>⚙</span></div>
+        <div class="col">
+          <div class="label">十月 · 8 篇</div>
+          <div class="heat" data-heat="9" style="--cell:10px;--gap:4px"></div>
+          <div class="day-row on">1008 今天 <small>2/5</small></div>
+          <div class="day-row">1007 Spark · 8 条 <small>3/3</small></div>
+          <div class="day-row">1006 Spark <small>4/6</small></div>
+          <div class="day-row">1005 Spark: <small>2/4</small></div>
+          <div class="day-row">1004 讲的不好不是… <small>—</small></div>
+          <div class="day-row">1003 训练面对困… <small>5/5</small></div>
+        </div>
+        <div class="doc">
+          <h3>10 月 8 日</h3><div class="sub">星期四 · 🔒 已加密同步到 3 台设备</div>
+          <div class="grid2">
+            <div class="card list" style="margin:0">
+              <div class="item"><span class="chk"></span><span class="t">英语单词</span><span class="tag carry">↻2</span></div>
+              <div class="item done"><span class="chk"></span><span class="t">徐涛马原</span></div>
+              <div class="item done"><span class="chk"></span><span class="t">电路 18 讲</span><span class="tag prog">18/40</span></div>
+              <div class="item"><span class="chk"></span><span class="t">每日日志提醒功能</span></div>
+              <div class="item"><span class="chk"></span><span class="t">sony 继续</span></div>
+            </div>
+            <div>
+              <div class="label">SPARK</div>
+              <div class="chips"><span class="chip">微信文件传输助手分析历史</span><span class="chip">参考文献必填</span><span class="chip">继续浏览·全部文章？</span></div>
+              <div class="shot"><div class="heat" data-heat="14" style="--cell:6px;--gap:2px"></div></div>
+            </div>
+          </div>
+          <div class="publish"><span>今晚总结：完成 <b>2</b>，延续 1，新增 Spark 3。公开到网站：今日 2/5 · 连续 12 天</span><span class="btn">发成日志</span></div>
+        </div>
+      </div>
+      <p class="caption">MACOS · 主窗口</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================ C ================================ -->
+<div class="direction C" id="dir-C">
+  <header><h2>C · 日晷</h2><p>把一天画成一个环：外圈是时间走了多少，内圈是事情做了多少；下面是今天的时间线。背景颜色跟着时间从清晨的杏色走到夜里的紫。最有新意，也最活泼。</p></header>
+  <div class="stage">
+    <div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>15:40</span><i class="cam"></i><span>5G ▮▮▮ 74%</span></div>
+        <div class="body">
+          <div class="ringwrap">
+            <svg viewBox="0 0 236 236"><circle cx="118" cy="118" r="106" fill="none" stroke="rgba(36,32,58,.08)" stroke-width="12"/><circle cx="118" cy="118" r="106" fill="none" stroke="#ff9a62" stroke-width="12" stroke-linecap="round" stroke-dasharray="666" stroke-dasharray="666" stroke-dashoffset="230"/><circle cx="118" cy="118" r="84" fill="none" stroke="rgba(36,32,58,.08)" stroke-width="12"/><circle cx="118" cy="118" r="84" fill="none" stroke="#6b5cff" stroke-width="12" stroke-linecap="round" stroke-dasharray="528" stroke-dashoffset="317"/></svg>
+            <div class="ring-center"><b>1008</b><span>2 / 5 件事</span><small>星期四 · 连续 12 天</small></div>
+          </div>
+          <div class="legend"><span><i style="background:#ff9a62"></i>今天过去 65%</span><span><i style="background:#6b5cff"></i>完成 40%</span></div>
+          <div class="glass">
+            <div class="timeline">
+              <div class="ev done"><time>08:12</time><span class="t">徐涛马原</span></div>
+              <div class="ev done"><time>10:40</time><span class="t">电路 18 讲</span><span class="badge p">18/40</span></div>
+              <div class="ev now"><time>现在</time><span class="t">英语单词</span><span class="badge">↻ 2 天</span></div>
+              <div class="ev"><time>今晚</time><span class="t">每日日志提醒功能</span></div>
+            </div>
+          </div>
+          <div class="sparks"><span class="bubble">微信文件传输助手分析历史</span><span class="bubble">参考文献必填</span></div>
+        </div>
+        <div class="side-icons"><span>时间线</span><span>进度</span></div>
+        <div class="orb"></div>
+      </div></div>
+      <p class="caption">ANDROID · 今天（下午）</p>
+    </div>
+    <div>
+      <div class="mac">
+        <aside class="left">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="ringwrap">
+            <svg viewBox="0 0 236 236"><circle cx="118" cy="118" r="106" fill="none" stroke="rgba(36,32,58,.08)" stroke-width="12"/><circle cx="118" cy="118" r="106" fill="none" stroke="#ff9a62" stroke-width="12" stroke-linecap="round" stroke-dasharray="666" stroke-dashoffset="230"/><circle cx="118" cy="118" r="84" fill="none" stroke="rgba(36,32,58,.08)" stroke-width="12"/><circle cx="118" cy="118" r="84" fill="none" stroke="#6b5cff" stroke-width="12" stroke-linecap="round" stroke-dasharray="528" stroke-dashoffset="317"/></svg>
+            <div class="ring-center"><b>1008</b><span>2 / 5 件事</span></div>
+          </div>
+          <div class="glass"><div class="timeline">
+            <div class="ev done"><time>08:12</time><span class="t">徐涛马原</span></div>
+            <div class="ev done"><time>10:40</time><span class="t">电路 18 讲</span></div>
+            <div class="ev now"><time>现在</time><span class="t">英语单词</span></div>
+            <div class="ev"><time>今晚</time><span class="t">每日日志提醒</span></div>
+          </div></div>
+        </aside>
+        <main class="right">
+          <h3>10 月 8 日，星期四</h3><div class="sub">🔒 只在你的设备与加密保险库里 · 公开：今日进度与连续天数</div>
+          <div class="cols">
+            <div class="glass"><div style="font-weight:700;margin-bottom:8px">Spark</div><div class="sparks" style="margin:0"><span class="bubble">微信文件传输助手分析历史</span><span class="bubble">参考文献必填</span><span class="bubble">继续浏览·全部文章？</span></div></div>
+            <div class="glass"><div style="font-weight:700">这一周</div><div class="weekbars"><i style="height:60%"></i><i style="height:85%"></i><i style="height:40%"></i><i style="height:100%"></i><i style="height:70%"></i><i style="height:90%"></i><i class="today" style="height:40%"></i></div><div class="weekdays"><span>五</span><span>六</span><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span></div></div>
+          </div>
+          <div class="glass"><div style="font-weight:700;margin-bottom:10px">2026</div><div class="heat" data-heat="40"></div></div>
+          <div class="glass" style="font-size:14px;color:var(--ink2)">随记 · 感觉黑夜模式下更好看？</div>
+        </main>
+      </div>
+      <p class="caption">MACOS · 主窗口</p>
+    </div>
+  </div>
+</div>
+
+<div class="direction is-on" style="padding-top:0">
+  <div class="notes">
+    <div><b>A · 纸与墨</b>和网站是一家人，长时间看最舒服；便利贴 Spark、墨线时间很有辨识度。偏安静，第一眼的「哇」少一点。</div>
+    <div><b>B · 夜航</b>你偏爱的深色；热力图和发光完成态最有成就感，适合「进度」这件事。白天模式需要另配一套，信息密度高。</div>
+    <div><b>C · 日晷</b>最有新意：一眼看出今天过了多少、做了多少；颜色随时间变。最活泼，但写长文和看历史时要收敛。</div>
+  </div>
+</div>
+
+<script>
+// 热力图：伪随机但固定（同一个种子每次一样），最后一格是今天。
+document.querySelectorAll("[data-heat]").forEach((grid, n) => {
+  let seed = 7 + n * 13;
+  const rand = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  const weeks = Number(grid.dataset.heat);
+  const total = weeks * 7 - 3;
+  for (let i = 0; i < total; i++) {
+    const cell = document.createElement("i");
+    const r = rand();
+    const recent = i > total * 0.35;
+    cell.dataset.l = String(r < (recent ? 0.12 : 0.45) ? 0 : r < 0.5 ? 1 : r < 0.75 ? 2 : r < 0.92 ? 3 : 4);
+    if (i === total - 1) { cell.className = "today"; cell.dataset.l = "2"; }
+    grid.append(cell);
+  }
+});
+document.querySelectorAll(".tabs button").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b === tab)));
+  document.querySelectorAll(".direction[id]").forEach((d) => d.classList.toggle("is-on", d.id === `dir-${tab.dataset.dir}`));
+}));
+</script>
+</body>
+</html>
