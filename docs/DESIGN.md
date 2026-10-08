@@ -1,6 +1,7 @@
-# 日迹 · 设计文档 v0.1
+# 日迹 · 设计文档 v0.2
 
-> 状态：草案，待站长审阅（2026-10-08）。审阅通过前不建远程仓库、不写业务代码。
+> 状态：草案 v0.2（2026-10-08）。已定：方向 A、名字「日迹」、Android 用 Kotlin + Compose、
+> 存储双副本（腾讯云 + 私有仓库）、公开卡放首页、仓库公开、只支持站长自己的设备（Android 17 / macOS 27）。
 > 视觉原型：[`design/prototype.html`](../design/prototype.html)，已选定方向 **A · 纸与墨**。
 
 ## 1. 一句话
@@ -272,40 +273,90 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 
 离线兜底：导入保险库恢复包（`magic-spark-vault-recovery.json`）在本机派生 `K_riji`。
 
-### 8.3 记录信封与传输
+> 荣耀国行机型没有谷歌服务（GMS）：不能依赖 Google 密码管理器的通行密钥与 FCM 推送。
+> 配对只用 Android Keystore；提醒用本地精确闹钟；同步在应用前台与 WorkManager 周期任务中进行，
+> 需要在系统设置里允许日迹自启动与后台运行（首次启动时引导）。
+
+### 8.3 双副本的分布式同步
+
+站长的要求：腾讯云与 GitHub 私有仓库**都**保存数据，任何一处坏掉都不丢、都能继续同步。
+核心做法是**每台设备一条只追加的加密日志**：
+
+```text
+设备 A 的日志：A#1 → A#2 → A#3 …        每段 = 一批变更（加密），带序号与前一段的哈希
+设备 B 的日志：B#1 → B#2 …
+副本 = 所有设备日志段的集合            腾讯云 SQLite、GitHub 私有仓库、每台设备本地，都是副本
+状态 = 把所有段里的变更按 HLC 合并      同一条记录取 HLC 最大的那次写入
+```
+
+为什么这样设计：
+
+- **存储层没有写冲突**。每台设备只写自己的日志，副本之间同步就是「取并集」：谁缺哪一段就补哪一段。
+  腾讯云和 GitHub 不需要谁是主、谁是从，也不需要分布式锁。
+- **任一副本都能单独提供同步**。腾讯云挂了，设备直接读写 GitHub；GitHub 不可达（国内网络常见），
+  只走腾讯云；之后两边互相补齐（反熵）。
+- **服务器作恶也只能「藏」不能「改」**。段用 `K_riji` 认证加密，并按序号与哈希链串起来：
+  副本漏给某一段，客户端能从序号断档与哈希链发现；伪造或篡改会在解密时失败。
+
+**段的格式**
 
 ```json
 {
-  "id": "0192…",           "type": "block",
-  "rev": "<HLC>",          "epoch": 1,
-  "device": "<设备 id>",    "deleted": false,
-  "dek": "<K_riji 包裹的 DEK>",
-  "ct": "<AES-256-GCM 密文，AAD = id | type | rev | epoch>"
+  "v": 1, "device": "<设备 id>", "seq": 42,
+  "prev": "<上一段密文的 SHA-256>",
+  "epoch": 1, "hlc_max": "<本段最大 HLC>",
+  "ct": "<AES-256-GCM 密文；AAD = v|device|seq|prev|epoch>"
 }
 ```
 
-- 服务端只看到 id、类型、版本、时间顺序，看不到标题、正文与日期。
-- **拉取**：`GET /api/native/riji/changes?cursor=<c>` → 自游标以来变化的信封 + 新游标。
-- **推送**：`POST /api/native/riji/changes` → 一批信封；服务端按记录做乐观并发，
-  合并后一次提交到私有仓库（`functionhx-spark-private` 的 `riji/` 目录），Git 历史即版本历史。
-- 附件：单独加密的内容寻址对象，`PUT /api/native/riji/blobs/<hash>`，按需下载。
+明文是一批变更：`[{ id, type, hlc, deleted?, value? }]`（`value` 为 §6 的实体）。
+服务端看得到设备 id、序号、大小和时间，看不到任何内容，也看不到哪条记录被改了。
 
-### 8.4 冲突、删除与撤销
+**同步一轮**
 
-- 每条记录带混合逻辑时钟（HLC）。同一条记录的并发修改：**块为单位 last-writer-wins**；
-  因为块很小（一个清单项、一张便利贴、一段话），丢失面很小。被覆盖的版本保留在本地
-  「冲突历史」7 天，可一键恢复。
-- 删除是墓碑（`deleted: true`），30 天后清理。
-- 撤销设备：删除其设备信封并 `epoch + 1`；之后的写入用新 `K_riji`，旧记录在下次修改时
-  重新加密。如实说明：**已被撤销设备读到过的内容无法收回**。
+1. 客户端持有**版本向量** `{A: 41, B: 17, …}`（每台设备已收到的最大序号）。
+2. 拉取：`GET …/riji/segments?have=<版本向量>` → 副本返回缺的段。
+3. 推送：把本机新写的段（`A#42…`）`PUT` 到副本；副本只接受「接在已知序号后面且 prev 吻合」的段。
+4. 同一轮里客户端可以**同时**对腾讯云与 GitHub 做 1–3；任一成功即算同步完成，另一个下次补。
+
+**两个副本**
+
+| 副本 | 存法 | 访问 |
+| --- | --- | --- |
+| 腾讯云（主力，国内快） | `spark-vault` 服务旁的 SQLite：`segments(device, seq, prev, size, ct, received_at)` | 原生会话（已有的 Magic Bridge PKCE 登录） |
+| GitHub 私有仓库 `functionhx-spark-private` | `riji/log/<device>/<seq 补零到 8 位>.json`，一段一个文件 | 单独的 GitHub App「Riji Sync」，**只装在私有仓库**、只有 Contents 读写；设备用 GitHub 设备流程登录，各自持有可过期的令牌（存 Keychain / Keystore），App 里不放任何密钥 |
+
+- 腾讯云每 5 分钟把新段批量提交到私有仓库（一次提交多段），并定期从仓库拉回设备直写的段，两边收敛。
+- 私有仓库的提交数随同步批次增长，每天大约十几到几十个；Git 历史本身就是一份可审计的变更记录。
+
+**快照与压缩**
+
+- 日志会一直变长。任一设备可以生成**快照**：某个版本向量下的完整状态（加密），
+  存为 `riji/snapshots/<版本向量哈希>.json`。新设备先下最新快照，再拉之后的段。
+- 被快照覆盖、且所有活跃设备都已确认收到的段，可在 90 天后从腾讯云清理；
+  私有仓库保留完整历史（可选按年归档）。
+
+**冲突、删除与撤销**
+
+- 同一条记录的并发修改：按 HLC **块为单位 last-writer-wins**；块很小（一个清单项、一张便利贴、一段话），
+  丢失面很小。被覆盖的版本留在本地「冲突历史」7 天，可一键恢复。
+- 删除是墓碑（`deleted: true`），快照时清理超过 30 天的墓碑。
+- 撤销设备：删除其设备信封并 `epoch + 1`，之后的段用新 `K_riji`；撤销设备的日志不再被接受。
+  如实说明：**已被撤销设备读到过的内容无法收回**。
+
+**附件**：单独加密的内容寻址对象（`riji/blobs/<密文 SHA-256>`），同样存两份；段里只引用哈希。
+
+**跨平台测试向量**（`spec/test-vectors/`）：同一组段在 Kotlin 与 Swift 两端解密、合并后必须得到
+逐字节相同的状态；含乱序到达、重复段、序号断档、哈希链被篡改、epoch 轮换等用例。
 
 ### 8.5 服务端改动（`spark-vault`，在网站仓库里，需手动部署到腾讯云）
 
 | 端点 | 作用 |
 | --- | --- |
 | `POST /api/native/riji/pairing` · `GET /api/riji/pairing/:code` · `PUT /api/riji/devices/:id` | 配对请求、浏览器取回、上传设备信封 |
-| `GET/POST /api/native/riji/changes` | 拉取 / 推送加密信封 |
+| `GET /api/native/riji/segments?have=…` · `PUT /api/native/riji/segments/:device/:seq` | 拉取 / 追加加密日志段 |
 | `PUT/GET /api/native/riji/blobs/:hash` | 加密附件 |
+| 后台任务 | 每 5 分钟与私有仓库双向补齐段与附件 |
 | `PUT /api/native/riji/public` · `GET /public/riji/today` | 写入 / 公开读取「只有数字」的今日统计 |
 | `POST /api/native/riji/logs` | 发成网站日志（提交 `_posts/…-zh.md`，`kind: log`） |
 
@@ -314,8 +365,9 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 
 ## 9. 网站侧
 
-- **首页「今天在做」卡**：读 `GET /public/riji/today`（腾讯云提供，国内可达），无数据时不显示；
+- **首页「今天在做」卡**（已定放首页）：读 `GET /public/riji/today`（腾讯云提供，国内可达），无数据时不显示；
   只渲染数字与进度名（站长勾选为公开的那几项）。热力图沿用网站已有的格子样式。
+  和「模型训练进度卡片」一样，站长设置里有显示开关（走实时设置，不用重新构建）。
 - **日志**：`kind: log` 的文章进入现有「日志」栏目；文章页文末注明「来自日迹」。
 - **/spark/**：解锁后多一个「日迹」只读视图（可选，P4）。
 - `validate_content.py` / `check_built_site.py` 增加对应约束（日志文章字段、公开卡不含正文等）。
@@ -333,8 +385,8 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 
 | 部分 | 选择 |
 | --- | --- |
-| Android | Kotlin、Jetpack Compose、Room、WorkManager（同步与提醒）、Glance（小组件，P3） |
-| macOS（以后 iOS / iPad） | Swift 6、SwiftUI + AppKit / TextKit 2（块编辑器）、GRDB、CryptoKit |
+| Android | Kotlin、Jetpack Compose、Room、WorkManager（同步与提醒）、Glance（小组件，P3）；minSdk 36、target 最新（站长设备：荣耀 Magic 8 Pro，Android 17） |
+| macOS（以后 iOS / iPad） | Swift 6、SwiftUI + AppKit / TextKit 2（块编辑器）、GRDB、CryptoKit；最低 macOS 27（站长设备） |
 | 共同规格 | `spec/`：块格式 JSON Schema、同步协议、**跨平台测试向量**（加密、HLC 合并、导入映射），两端 CI 都必须通过 |
 | 服务端 | 网站仓库的 `spark-vault/`（Node，腾讯云） |
 | 网站 | 网站仓库的首页卡片与日志栏目 |
@@ -359,12 +411,17 @@ riji/
 | **P4 补齐** | 录音转写、扫描、画廊视图、OCR 搜索、/spark/ 日迹视图、可选 AI 总结 | 对照 §3.2 |
 | **P5 新平台** | iOS / iPad（手写）、Windows | — |
 
-## 13. 待定问题
+## 13. 已定与待定
 
-1. **服务端存储**：记录信封逐条提交 Git 会让私有仓库提交很多（按一次同步一个提交估算每天几十个）。
-   可接受，还是改为腾讯云本地 SQLite + 每日一次快照提交到私有仓库？
-2. **Android 最低版本**：建议 Android 10（API 29）；Keystore 的 ECDH 需要 API 31，更低版本的配对改用软件密钥 + 锁屏保护。
-3. **macOS 最低版本**：建议 macOS 14（与 Magic Notes 一致）。
-4. **公开卡的位置**：首页（建议）还是单独的 `/now/` 页面？
-5. **仓库可见性**：日迹仓库公开（便于展示与审计，像 Magic Notes）还是私有？
-6. **品牌**：英文名 / 包名，建议 `riji` / `com.functionhx.riji`。
+已定（2026-10-08）：
+
+- 存储：腾讯云与私有仓库**双副本**，每设备只追加日志 + 取并集同步（§8.3）。
+- 公开卡：首页，站长设置可开关。
+- 仓库：公开（内容、密钥、令牌永不进仓库）。
+- 设备：只支持站长自己的设备——荣耀 Magic 8 Pro（Android 17，minSdk 36）与 macOS 27。
+- 品牌：中文「日迹」，英文与包名 `riji` / `com.functionhx.riji`（可改）。
+
+待定：
+
+1. 「Riji Sync」GitHub App 需要站长在 GitHub 上创建并安装到私有仓库（P3 开始前）。
+2. 腾讯云上 SQLite 副本与 `spark-vault` 同进程还是独立服务（建议同进程，少一个部署单元）。
