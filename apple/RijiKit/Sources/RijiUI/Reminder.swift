@@ -8,6 +8,10 @@ public enum ReminderSettings {
     public static let minutesKey = "riji.reminder.minutes"
     public static let defaultEnabled = true
     public static let defaultMinutes = 22 * 60 + 30
+    /// 一天的分界线（零点后的分钟数）：默认凌晨 4 点，零点后写的总结仍算前一天。
+    public static let dayStartKey = "riji.day.start"
+    public static let defaultDayStart = DayClock.suggestedDayStart
+    public static let dayStarts = [0, 120, 180, 240, 300]
 
     public static var enabled: Bool {
         UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? defaultEnabled
@@ -16,6 +20,12 @@ public enum ReminderSettings {
     public static var minutes: Int {
         UserDefaults.standard.object(forKey: minutesKey) as? Int ?? defaultMinutes
     }
+
+    public static var dayStart: Int {
+        UserDefaults.standard.object(forKey: dayStartKey) as? Int ?? defaultDayStart
+    }
+
+    public static func dayStartLabel(_ minutes: Int) -> String { minutes == 0 ? "零点" : "凌晨 \(minutes / 60) 点" }
 
     public static func label(_ minutes: Int) -> String { String(format: "%02d:%02d", minutes / 60, minutes % 60) }
 }
@@ -47,9 +57,8 @@ public enum EveningReminder {
         let minutes = ReminderSettings.minutes
         for offset in 0..<days {
             let date = clock.adding(days: offset, to: today)
-            guard let start = clock.date(for: date) else { continue }
-            let fire = start.addingTimeInterval(TimeInterval(minutes * 60))
-            guard fire > now, let nudge = offset == 0 ? book.evening(on: date).nudge : Evening.genericNudge else { continue }
+            // 早于分界线的提醒时间（比如 00:30）属于这一天的深夜
+            guard let fire = clock.instant(minutes: minutes, on: date), fire > now, let nudge = offset == 0 ? book.evening(on: date).nudge : Evening.genericNudge else { continue }
             let content = UNMutableNotificationContent()
             content.title = nudge.title
             content.body = nudge.body
@@ -69,6 +78,7 @@ public struct ReminderSettingsView: View {
     @AppStorage(MailReminder.emailKey) private var email = false
     @AppStorage(MailReminder.recipientsKey) private var recipients = ""
     @AppStorage(MailReminder.delayKey) private var delay = 60
+    @AppStorage(ReminderSettings.dayStartKey) private var dayStart = ReminderSettings.defaultDayStart
     @State private var token = ""
     private let mail = MailReminder.shared
 
@@ -77,6 +87,17 @@ public struct ReminderSettingsView: View {
     public var body: some View {
         let parsed = MailReminder.parse(recipients)
         Form {
+            Section {
+                Picker("一天结束于", selection: touched($dayStart)) {
+                    ForEach(ReminderSettings.dayStarts, id: \.self) { Text(ReminderSettings.dayStartLabel($0)) }
+                }
+            } header: {
+                Text("一天")
+            } footer: {
+                Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section {
                 Toggle("每晚提醒写今日总结和明日目标", isOn: touched($enabled))
                 DatePicker("提醒时间", selection: time, displayedComponents: .hourAndMinute)

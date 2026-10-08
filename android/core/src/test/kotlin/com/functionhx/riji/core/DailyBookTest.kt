@@ -43,6 +43,32 @@ class DailyBookTest {
         assertEquals("ai", OrderKey.between("a", "b"))
     }
 
+    @Test fun dayEndsAtTheBoundaryNotMidnight() {
+        val clock = DayClock(dayStart = 240)
+        val night = Instant.ofEpochSecond(1_791_484_200)  // 2026-10-09 02:30 北京时间
+        assertEquals("2026-10-09", DayClock().key(night))
+        assertEquals("2026-10-08", clock.key(night))
+        assertEquals("2026-10-09", clock.key(night.plusSeconds(90 * 60)))
+        assertEquals(90, clock.minutesLeft(night))
+        assertTrue(clock.dayProgress(night) in 0.9..0.9999)
+        assertEquals(Instant.ofEpochSecond(1_791_477_000), clock.instant(30, "2026-10-08"))
+        assertEquals(Instant.ofEpochSecond(1_791_469_800), clock.instant(22 * 60 + 30, "2026-10-08"))
+        assertEquals(990.0 / 1320.0, clock.inkPosition(22 * 60 + 30), 1e-9)
+        assertEquals(990.0 / 1080.0, DayClock().inkPosition(22 * 60 + 30), 1e-9)
+    }
+
+    @Test fun carryOverHappensAtTheBoundary() {
+        val book = book()
+        book.clock = DayClock(dayStart = 240)
+        val night = Instant.ofEpochSecond(1_791_484_200)
+        book.add(BlockKind.CHECK, "写周报", SectionRole.TOMORROW, "2026-10-08", now = night)
+        book.ensureDay(book.clock.key(night), night)
+        assertNull(book.day("2026-10-09"))
+        val morning = night.plusSeconds(5 * 3600)
+        book.ensureDay(book.clock.key(morning), morning)
+        assertEquals(listOf("写周报"), book.items(SectionRole.TODO, "2026-10-09").map { it.text })
+    }
+
     @Test fun unfinishedTasksCarryOverWithoutRewritingHistory() {
         val book = book()
         val english = book.add(BlockKind.CHECK, "英语单词", SectionRole.TODO, "2026-10-07", now = monday)!!

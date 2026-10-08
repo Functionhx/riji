@@ -67,6 +67,7 @@ public final class MailReminder {
             "recipients": Array(Self.parse(defaults.string(forKey: Self.recipientsKey) ?? "").valid.prefix(Self.maxRecipients)),
             "minutes": ReminderSettings.minutes,
             "delay": defaults.object(forKey: Self.delayKey) as? Int ?? 60,
+            "day_start": ReminderSettings.dayStart,
             "updated_at": defaults.integer(forKey: Self.updatedKey),
         ]
     }
@@ -78,6 +79,7 @@ public final class MailReminder {
         if let recipients = server["recipients"] as? [String] { defaults.set(recipients.joined(separator: ", "), forKey: Self.recipientsKey) }
         if let minutes = server["minutes"] as? Int { defaults.set(minutes, forKey: ReminderSettings.minutesKey) }
         if let delay = server["delay"] as? Int { defaults.set(delay, forKey: Self.delayKey) }
+        if let dayStart = server["day_start"] as? Int { defaults.set(dayStart, forKey: ReminderSettings.dayStartKey) }
         defaults.set(updated, forKey: Self.updatedKey)
     }
 

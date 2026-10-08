@@ -132,6 +132,9 @@ def clean_settings(raw) -> dict | None:
         raise ValueError("recipients")
     minutes = raw.get("minutes", DEFAULT_MINUTES)
     delay = raw.get("delay", DEFAULT_DELAY)
+    day_start = raw.get("day_start", 0)
+    if not (isinstance(day_start, int) and 0 <= day_start < 6 * 60):
+        raise ValueError("day_start")
     updated_at = raw.get("updated_at", 0)
     if not (isinstance(minutes, int) and 0 <= minutes < 24 * 60 and isinstance(delay, int) and 0 <= delay <= 6 * 60):
         raise ValueError("time")
@@ -139,7 +142,7 @@ def clean_settings(raw) -> dict | None:
         raise ValueError("updated_at")
     return {
         "email": bool(raw.get("email")), "reminder": bool(raw.get("reminder", True)), "recipients": recipients,
-        "minutes": minutes, "delay": delay, "updated_at": updated_at,
+        "minutes": minutes, "delay": delay, "day_start": day_start, "updated_at": updated_at,
     }
 
 
@@ -192,20 +195,33 @@ class Mailer:
 # ---------------------------------------------------------------- 每天的检查
 
 
+def logical_day(local: datetime, settings: dict) -> tuple[str, int]:
+    """按一天的分界线（day_start，零点后的分钟数）算「今天」和此刻是这一天开始后的第几分钟（从日历零点算）。"""
+    day_start = int(settings.get("day_start", 0))
+    shifted = local - timedelta(minutes=day_start)
+    midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)
+    return shifted.strftime("%Y-%m-%d"), int((local - midnight).total_seconds() // 60)
+
+
 def due_minutes(settings: dict) -> int:
-    """兜底时刻（当天的分钟数）；超过 23:55 就在 23:55 发，不拖到第二天。"""
-    return min(int(settings.get("minutes", DEFAULT_MINUTES)) + int(settings.get("delay", DEFAULT_DELAY)), 23 * 60 + 55)
+    """兜底时刻（从这一天日历零点起的分钟数，可以过零点）；早于分界线的提醒时间属于深夜。
+    最晚在这一天结束（分界线）前 5 分钟发，不拖到下一天。"""
+    day_start = int(settings.get("day_start", 0))
+    minutes = int(settings.get("minutes", DEFAULT_MINUTES))
+    if minutes < day_start:
+        minutes += 1440
+    return min(minutes + int(settings.get("delay", DEFAULT_DELAY)), 1440 + day_start - 5)
 
 
 def tick(state: State, mailer: Mailer, now: datetime, log=print) -> str | None:
     """到点就检查并发信。返回这次做了什么（测试用）：sent / skipped / error / None（还没到点或已处理）。"""
     local = now.astimezone(ZONE)
-    today = local.strftime("%Y-%m-%d")
     with state.lock:
         settings = state.data["settings"]
+        today, elapsed = logical_day(local, settings)
         if not settings.get("email") or not settings.get("recipients") or not mailer.configured:
             return None
-        if local.hour * 60 + local.minute < due_minutes(settings):
+        if elapsed < due_minutes(settings):
             return None
         record = state.data["sent"].get(today, {})
         if record.get("result") in ("sent", "skipped"):
@@ -288,8 +304,8 @@ def make_handler(state: State, mailer: Mailer, token_sha256: str, clock=lambda: 
             except (ValueError, TypeError, AttributeError):
                 return self.reply(400, {"error": "invalid"})
             now = clock()
-            today = now.astimezone(ZONE).strftime("%Y-%m-%d")
             with state.lock:
+                today = logical_day(now.astimezone(ZONE), state.data["settings"])[0]
                 if settings and settings["updated_at"] >= state.data["settings"].get("updated_at", 0):
                     state.data["settings"] = settings
                 current = dict(state.data["settings"])

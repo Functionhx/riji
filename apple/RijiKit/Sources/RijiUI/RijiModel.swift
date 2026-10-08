@@ -47,13 +47,13 @@ public final class RijiModel {
             defaults.set(device, forKey: "riji.device")
         }
         let store = try RecordStore(log: ChangeLog(url: folder.appendingPathComponent("changes.jsonl")), device: device)
-        return RijiModel(book: DailyBook(store: store))
+        return RijiModel(book: DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.dayStart)))
     }
 
     /// 只在内存里的模型（预览、截图、测试）。
     public static func preview(seed: Bool = true, now: Date = Date()) -> RijiModel {
         let store = try! RecordStore(log: nil, device: "preview")
-        let book = DailyBook(store: store)
+        let book = DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.defaultDayStart))
         if seed { DemoData.seed(book, today: book.clock.key(for: now), now: now) }
         return RijiModel(book: book, now: { now })
     }
@@ -68,6 +68,14 @@ public final class RijiModel {
         today = key
         if wasOnToday { selectedDate = key }
         perform { try book.ensureDay(key, now: now()) }
+    }
+
+    /// 改了一天的分界线：「今天」可能变成前一天（比如凌晨 2 点把分界线从零点改到 4 点）。
+    public func setDayStart(_ minutes: Int) {
+        guard book.clock.dayStart != minutes else { return }
+        book.clock.dayStart = minutes
+        refreshDay()
+        revision += 1
     }
 
     public func open(_ date: String) {

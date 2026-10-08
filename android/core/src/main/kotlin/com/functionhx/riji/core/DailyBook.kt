@@ -21,7 +21,7 @@ object ProgressParser {
 data class DayStats(val total: Int, val done: Int, val carried: Int, val sparks: Int, val hasContent: Boolean)
 
 /** 每日层的全部规则。与 Swift 的 DailyBook 一一对应（同样的增量缓存）。 */
-class DailyBook(val store: RecordStore, val clock: DayClock = DayClock()) {
+class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
     private val lock = Any()
     private var cachedRevision = -1
     private var cachedDays: List<Day> = emptyList()

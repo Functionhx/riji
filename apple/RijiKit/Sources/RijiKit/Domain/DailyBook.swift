@@ -1,12 +1,20 @@
 import Foundation
 
 /// 按发布时区（默认北京时间，与网站一致）计算「今天」。
+///
+/// 一天在 `dayStart`（从零点起的分钟数）结束，而不是零点：分界线是凌晨 4 点时，02:30 写的总结仍算前一天。
+/// 日期键仍是那一天的日历日期，跨天（延续、明日目标）也在分界线上发生。
 public struct DayClock: Sendable {
     public static let defaultTimeZone = "Asia/Shanghai"
+    /// 应用里的默认分界线（凌晨 4 点）。内核默认是零点，测试与旧行为不变。
+    public static let suggestedDayStart = 4 * 60
     public var timeZone: TimeZone
+    /// 一天的分界线：零点之后多少分钟（0…359）。
+    public var dayStart: Int
 
-    public init(timeZoneID: String = DayClock.defaultTimeZone) {
+    public init(timeZoneID: String = DayClock.defaultTimeZone, dayStart: Int = 0) {
         timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(secondsFromGMT: 8 * 3600)!
+        self.dayStart = min(max(dayStart, 0), 359)
     }
 
     public var calendar: Calendar {
@@ -16,7 +24,7 @@ public struct DayClock: Sendable {
     }
 
     public func key(for date: Date) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        let parts = calendar.dateComponents([.year, .month, .day], from: date.addingTimeInterval(-Double(dayStart * 60)))
         return String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
     }
 
@@ -50,17 +58,36 @@ public struct DayClock: Sendable {
         return names[calendar.component(.weekday, from: date) - 1]
     }
 
-    /// 今天 06:00–24:00 过去了多少（墨线用），0…1。
-    public func dayProgress(at now: Date) -> Double {
-        let start = calendar.startOfDay(for: now).addingTimeInterval(6 * 3600)
-        return min(1, max(0, now.timeIntervalSince(start) / (18 * 3600)))
+    /// 某一天里「几点几分」对应的时刻；早于分界线的时刻属于这一天的深夜（日历上的第二天）。
+    public func instant(minutes: Int, on key: String) -> Date? {
+        guard let midnight = date(for: key) else { return nil }
+        return midnight.addingTimeInterval(Double((minutes < dayStart ? minutes + 1440 : minutes) * 60))
     }
 
-    /// 距离今天结束还有多少分钟。
+    /// 墨线从 06:00 画到这一天结束（分界线）。
+    public var inkMinutes: Int { 1440 + dayStart - 360 }
+
+    /// 某个时刻在墨线上的位置，0…1。
+    public func inkPosition(minutes: Int) -> Double {
+        let offset = (minutes < dayStart ? minutes + 1440 : minutes) - 360
+        return min(1, max(0, Double(offset) / Double(inkMinutes)))
+    }
+
+    /// 今天 06:00 到分界线过去了多少（墨线用），0…1。
+    public func dayProgress(at now: Date) -> Double {
+        guard let start = instant(minutes: 360, on: key(for: now)) else { return 0 }
+        return min(1, max(0, now.timeIntervalSince(start) / Double(inkMinutes * 60)))
+    }
+
+    /// 距离今天结束（分界线）还有多少分钟。
     public func minutesLeft(at now: Date) -> Int {
-        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        guard let midnight = date(for: key(for: now)) else { return 0 }
+        let end = midnight.addingTimeInterval(Double((1440 + dayStart) * 60))
         return max(0, Int(end.timeIntervalSince(now) / 60))
     }
+
+    /// 「04:00」
+    public static func label(_ minutes: Int) -> String { String(format: "%02d:%02d", minutes / 60, minutes % 60) }
 }
 
 /// 识别「电路 18 讲」「马原 第 6 章」「英语单词 26 天」这类长期进度。

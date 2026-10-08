@@ -110,6 +110,30 @@ class TickTests(unittest.TestCase):
         self.assertIsNone(self.tick(at(23, 50)))
         self.assertEqual(self.tick(at(23, 55)), "sent")
 
+    def test_day_boundary_lets_the_mail_go_out_after_midnight(self):
+        # 分界线凌晨 4 点、23:30 提醒、兜底 1 小时：9 号 00:30 发的是 8 号的提醒
+        self.state.data["settings"].update(minutes=23 * 60 + 30, delay=60, day_start=240)
+        self.state.data["days"]["2026-10-08"] = {"mac": {"has_summary": False, "plans": 1, "received_at": 1}}
+        self.assertIsNone(self.tick(at(23, 59)))
+        self.assertIsNone(self.tick(at(0, 20, day=9)))
+        self.assertEqual(self.tick(at(0, 30, day=9)), "sent")
+        self.assertEqual(self.mailer.sent[0][1], "日迹 · 今日总结还没写")
+        self.assertIn("2026-10-08", self.state.data["sent"])
+        # 零点后写完了：8 号已处理，不再发；9 号要到 9 号晚上才轮到
+        self.assertIsNone(self.tick(at(3, 0, day=9)))
+
+    def test_reminder_before_the_boundary_belongs_to_the_night(self):
+        # 提醒定在 00:30（早于分界线），属于前一天的深夜
+        self.state.data["settings"].update(minutes=30, delay=30, day_start=240)
+        self.assertIsNone(self.tick(at(23, 0)))
+        self.assertEqual(self.tick(at(1, 0, day=9)), "sent")
+        self.assertIn("2026-10-08", self.state.data["sent"])
+
+    def test_late_mail_is_capped_before_the_boundary(self):
+        self.state.data["settings"].update(minutes=3 * 60 + 30, delay=120, day_start=240)
+        self.assertIsNone(self.tick(at(3, 50, day=9)))
+        self.assertEqual(self.tick(at(3, 55, day=9)), "sent")
+
     def test_smtp_errors_retry_three_times(self):
         self.mailer.fail = 5
         self.assertEqual(self.tick(at(23, 30)), "error")

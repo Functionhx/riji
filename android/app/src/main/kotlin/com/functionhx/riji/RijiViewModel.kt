@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import com.functionhx.riji.core.BlockKind
 import com.functionhx.riji.core.ChangeLog
 import com.functionhx.riji.core.DailyBook
+import com.functionhx.riji.core.DayClock
 import com.functionhx.riji.core.JsonValue
 import com.functionhx.riji.core.ProgressItem
 import com.functionhx.riji.core.RecordStore
@@ -55,7 +56,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         }
         this.device = device
         val log = ChangeLog(File(application.filesDir, "riji/changes.jsonl"))
-        book = DailyBook(RecordStore(log, device))
+        book = DailyBook(RecordStore(log, device), DayClock(dayStart = EveningReminder.dayStart(application)))
         today = book.clock.key(Instant.now())
         selectedDate = today
         perform { book.ensureDay(today) }
@@ -108,6 +109,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
                         mail = MailReminder.load(app)
                         reminderOn = EveningReminder.enabled(app)
                         reminderMinutes = EveningReminder.minutes(app)
+                        applyDayStart(EveningReminder.dayStart(app))
                     }
                 }
                 is MailReminder.Result.Failed -> mailStatus = result.message
@@ -148,6 +150,24 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var reminderMinutes by mutableIntStateOf(EveningReminder.minutes(application))
         private set
+    var dayStart by mutableIntStateOf(EveningReminder.dayStart(application))
+        private set
+
+    /** 改了一天的分界线：「今天」可能变成前一天。 */
+    fun changeDayStart(minutes: Int) {
+        EveningReminder.saveDayStart(getApplication(), minutes)
+        MailReminder.touch(getApplication())
+        applyDayStart(minutes)
+        scheduleReport()
+    }
+
+    private fun applyDayStart(minutes: Int) {
+        dayStart = minutes
+        if (book.clock.dayStart == minutes) return
+        book.clock = DayClock(dayStart = minutes)
+        refreshDay()
+        revision++
+    }
 
     fun setReminder(on: Boolean, minutes: Int) {
         reminderOn = on

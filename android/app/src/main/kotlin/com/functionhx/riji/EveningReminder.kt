@@ -44,6 +44,9 @@ class EveningReminder : BroadcastReceiver() {
 
         fun enabled(context: Context) = context.getSharedPreferences("riji", 0).getBoolean(KEY_ON, true)
         fun minutes(context: Context) = context.getSharedPreferences("riji", 0).getInt(KEY_MINUTES, DEFAULT_MINUTES)
+        /** 一天的分界线（零点后的分钟数），默认凌晨 4 点。 */
+        fun dayStart(context: Context) = context.getSharedPreferences("riji", 0).getInt("day_start", com.functionhx.riji.core.DayClock.SUGGESTED_DAY_START)
+        fun saveDayStart(context: Context, minutes: Int) { context.getSharedPreferences("riji", 0).edit().putInt("day_start", minutes).apply() }
 
         fun save(context: Context, on: Boolean, minutes: Int) {
             context.getSharedPreferences("riji", 0).edit().putBoolean(KEY_ON, on).putInt(KEY_MINUTES, minutes).apply()
@@ -73,7 +76,7 @@ class EveningReminder : BroadcastReceiver() {
             val file = File(context.filesDir, "riji/changes.jsonl")
             if (!file.exists()) return null
             val device = context.getSharedPreferences("riji", 0).getString("device", null) ?: "android-reminder"
-            val book = DailyBook(RecordStore(ChangeLog(file), device))
+            val book = DailyBook(RecordStore(ChangeLog(file), device), com.functionhx.riji.core.DayClock(dayStart = dayStart(context)))
             return book.evening(book.clock.key(Instant.now()))
         }
 

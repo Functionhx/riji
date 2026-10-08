@@ -24,7 +24,7 @@ public struct DayPageView: View {
                         BackfillBanner(date: missed) { dismissedBackfill = missed }.padding(.top, 16)
                     }
                     InkLine(progress: clock.dayProgress(at: model.currentDate), now: model.currentDate, timeZone: clock.timeZone,
-                            reminder: reminderOn ? reminderMinutes : nil)
+                            end: clock.dayStart, reminder: reminderOn ? clock.inkPosition(minutes: reminderMinutes) : nil)
                         .padding(.top, 18)
                 }
                 TodoSection(date: date, isToday: isToday, stats: stats).padding(.top, 30)
@@ -77,13 +77,15 @@ public struct DayPageView: View {
     }
 }
 
-/// 墨线：06:00–24:00 的进度，赭色圆点是「现在」。
+/// 墨线：06:00 到一天的分界线（默认次日 04:00）的进度，赭色圆点是「现在」。
 struct InkLine: View {
     var progress: Double
     var now: Date
     var timeZone: TimeZone
-    /// 晚间提醒的时刻（分钟），在墨线上画一道赭色短刻度。
-    var reminder: Int? = nil
+    /// 一天的分界线（墨线的终点）
+    var end: Int = 0
+    /// 晚间提醒在墨线上的位置（0…1），画一道赭色短刻度。
+    var reminder: Double? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -92,10 +94,10 @@ struct InkLine: View {
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Ink.line).frame(height: 2)
                     Rectangle().fill(Ink.ink).frame(width: x, height: 2)
-                    if let reminder, reminder >= 6 * 60 {
+                    if let reminder, reminder > 0 {
                         Rectangle().fill(Ink.ochreSoft).frame(width: 2, height: 10)
-                            .offset(x: proxy.size.width * Double(reminder - 6 * 60) / (18 * 60) - 1)
-                            .help("\(ReminderSettings.label(reminder)) 晚间提醒")
+                            .offset(x: proxy.size.width * reminder - 1)
+                            .help("晚间提醒")
                     }
                     Circle().fill(Ink.ochre).frame(width: 10, height: 10)
                         .overlay(Circle().stroke(Ink.paper, lineWidth: 3))
@@ -109,7 +111,7 @@ struct InkLine: View {
                 Spacer()
                 Text("现在 \(timeText)")
                 Spacer()
-                Text("24:00")
+                Text(DayClock.label(end == 0 ? 1440 : end))
             }
             .font(Typeface.mono(10.5))
             .foregroundStyle(Ink.ink3)

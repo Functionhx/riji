@@ -221,29 +221,45 @@ class RecordStore(private val log: ChangeLog?, device: String, wall: () -> Long 
     }
 }
 
-/** 按发布时区（默认北京时间）计算「今天」。 */
-class DayClock(zoneId: String = DEFAULT_ZONE) {
+/**
+ * 按发布时区（默认北京时间）计算「今天」。一天在 dayStart（零点后的分钟数）结束：分界线是凌晨 4 点时，
+ * 02:30 仍算前一天。与 Swift 的 DayClock 相同。
+ */
+class DayClock(zoneId: String = DEFAULT_ZONE, dayStart: Int = 0) {
     val zone: ZoneId = runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.of("UTC+8"))
+    val dayStart: Int = dayStart.coerceIn(0, 359)
 
-    fun key(instant: Instant): String = instant.atZone(zone).toLocalDate().toString()
+    fun key(instant: Instant): String = instant.minusSeconds(dayStart * 60L).atZone(zone).toLocalDate().toString()
     fun daysBetween(from: String, to: String): Int = ChronoUnit.DAYS.between(LocalDate.parse(from), LocalDate.parse(to)).toInt()
     fun adding(days: Int, key: String): String = LocalDate.parse(key).plusDays(days.toLong()).toString()
     fun title(key: String): String = LocalDate.parse(key).let { "${it.monthValue} 月 ${it.dayOfMonth} 日" }
     fun weekday(key: String): String = WEEKDAYS[LocalDate.parse(key).dayOfWeek.value % 7]
 
+    /** 某一天里「几点几分」对应的时刻；早于分界线的时刻属于这一天的深夜（日历上的第二天）。 */
+    fun instant(minutes: Int, key: String): Instant =
+        LocalDate.parse(key).atStartOfDay(zone).plusMinutes((if (minutes < dayStart) minutes + 1440 else minutes).toLong()).toInstant()
+
+    /** 墨线从 06:00 画到这一天结束（分界线）。 */
+    val inkMinutes: Int get() = 1440 + dayStart - 360
+
+    fun inkPosition(minutes: Int): Double =
+        (((if (minutes < dayStart) minutes + 1440 else minutes) - 360).toDouble() / inkMinutes).coerceIn(0.0, 1.0)
+
     fun dayProgress(now: Instant): Double {
-        val zoned = now.atZone(zone)
-        val start = zoned.toLocalDate().atStartOfDay(zone).plusHours(6)
-        return ((now.epochSecond - start.toEpochSecond()) / (18.0 * 3600)).coerceIn(0.0, 1.0)
+        val start = instant(360, key(now))
+        return ((now.epochSecond - start.epochSecond) / (inkMinutes * 60.0)).coerceIn(0.0, 1.0)
     }
 
     fun minutesLeft(now: Instant): Int {
-        val end: ZonedDateTime = now.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone)
+        val end: ZonedDateTime = LocalDate.parse(key(now)).atStartOfDay(zone).plusMinutes((1440 + dayStart).toLong())
         return maxOf(0, ((end.toEpochSecond() - now.epochSecond) / 60).toInt())
     }
 
     companion object {
         const val DEFAULT_ZONE = "Asia/Shanghai"
+        /** 应用里的默认分界线（凌晨 4 点）；内核默认零点。 */
+        const val SUGGESTED_DAY_START = 4 * 60
+        fun label(minutes: Int) = "%02d:%02d".format(minutes / 60, minutes % 60)
         private val WEEKDAYS = listOf("星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六")
     }
 }

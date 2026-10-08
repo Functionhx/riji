@@ -7,6 +7,7 @@ struct RijiApp: App {
     @State private var model = AppBootstrap.makeModel()
     @AppStorage(ReminderSettings.enabledKey) private var reminderOn = ReminderSettings.defaultEnabled
     @AppStorage(ReminderSettings.minutesKey) private var reminderMinutes = ReminderSettings.defaultMinutes
+    @AppStorage(ReminderSettings.dayStartKey) private var dayStart = ReminderSettings.defaultDayStart
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,7 @@ struct RijiApp: App {
                     if !AppBootstrap.isDemo { await EveningReminder.requestAuthorization() }
                 }
                 // 内容或提醒设置一变就重排晚间提醒（task(id:) 会取消上一次，相当于防抖）
+                .onChange(of: dayStart) { _, minutes in if !AppBootstrap.isDemo { model.setDayStart(minutes) } }
                 .task(id: ReminderKey(revision: model.revision, enabled: reminderOn, minutes: reminderMinutes, mail: MailReminder.shared.version)) {
                     guard !AppBootstrap.isDemo else { return }
                     try? await Task.sleep(for: .seconds(1))

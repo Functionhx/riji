@@ -47,6 +47,7 @@ object MailReminder {
             .put("recipients", JSONArray(parse(s.recipients).first.take(MAX_RECIPIENTS)))
             .put("minutes", EveningReminder.minutes(context))
             .put("delay", s.delay)
+            .put("day_start", EveningReminder.dayStart(context))
             .put("updated_at", prefs(context).getLong("settings_updated", 0))
     }
 
@@ -61,6 +62,7 @@ object MailReminder {
             .putInt("mail_delay", server.optInt("delay", 60))
             .putLong("settings_updated", updated)
             .apply()
+        if (server.has("day_start")) EveningReminder.saveDayStart(context, server.optInt("day_start"))
         EveningReminder.save(context, server.optBoolean("reminder", true), server.optInt("minutes", EveningReminder.DEFAULT_MINUTES))
         return true
     }

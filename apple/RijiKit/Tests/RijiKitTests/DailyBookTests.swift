@@ -24,6 +24,35 @@ struct DailyBookTests {
         #expect(clock.daysBetween("2026-10-05", "2026-10-08") == 3)
     }
 
+    @Test func dayEndsAtTheBoundaryNotMidnight() {
+        let clock = DayClock(dayStart: 240)
+        let night = Date(timeIntervalSince1970: 1_791_484_200)  // 2026-10-09 02:30 北京时间
+        #expect(DayClock().key(for: night) == "2026-10-09")
+        #expect(clock.key(for: night) == "2026-10-08")             // 凌晨 4 点前还是 8 号
+        #expect(clock.key(for: night.addingTimeInterval(90 * 60)) == "2026-10-09")  // 04:00 翻页
+        #expect(clock.minutesLeft(at: night) == 90)
+        #expect(clock.dayProgress(at: night) > 0.9 && clock.dayProgress(at: night) < 1)
+        // 00:30 的提醒属于 8 号的深夜；22:30 在墨线上的位置
+        #expect(clock.instant(minutes: 30, on: "2026-10-08") == Date(timeIntervalSince1970: 1_791_477_000))
+        #expect(clock.instant(minutes: 22 * 60 + 30, on: "2026-10-08") == Date(timeIntervalSince1970: 1_791_469_800))
+        #expect(abs(clock.inkPosition(minutes: 22 * 60 + 30) - 990.0 / 1320.0) < 1e-9)
+        #expect(abs(DayClock().inkPosition(minutes: 22 * 60 + 30) - 990.0 / 1080.0) < 1e-9)
+    }
+
+    @Test func carryOverHappensAtTheBoundary() throws {
+        let book = try makeBook()
+        book.clock = DayClock(dayStart: 240)
+        let night = Date(timeIntervalSince1970: 1_791_484_200)  // 9 号 02:30
+        try book.add(.check, text: "写周报", to: .tomorrow, on: "2026-10-08", now: night)
+        // 还没到 4 点：今天仍是 8 号，不生成 9 号
+        #expect(book.clock.key(for: night) == "2026-10-08")
+        try book.ensureDay(book.clock.key(for: night), now: night)
+        #expect(book.day("2026-10-09") == nil)
+        let morning = night.addingTimeInterval(5 * 3600)  // 07:30
+        try book.ensureDay(book.clock.key(for: morning), now: morning)
+        #expect(book.items(.todo, on: "2026-10-09").map(\.text.plain) == ["写周报"])
+    }
+
     @Test func progressParser() {
         #expect(ProgressParser.parse("电路 18 讲") == .init(name: "电路", value: 18, unit: "讲"))
         #expect(ProgressParser.parse("马原 第 6 章") == .init(name: "马原", value: 6, unit: "章"))

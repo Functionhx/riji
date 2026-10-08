@@ -141,7 +141,8 @@ fun TodayScreen(model: RijiViewModel, date: String) {
                         BackfillBanner(clock.title(missed), onOpen = { model.open(missed) }, onDismiss = { dismissedBackfill = missed })
                     }
                     InkLine(clock.dayProgress(now), ZonedDateTime.now(clock.zone).format(DateTimeFormatter.ofPattern("HH:mm")),
-                        if (model.reminderOn) model.reminderMinutes else null)
+                        com.functionhx.riji.core.DayClock.label(if (clock.dayStart == 0) 1440 else clock.dayStart),
+                        if (model.reminderOn) clock.inkPosition(model.reminderMinutes) else null)
                 }
             }
             item { SectionHeader(if (isToday) "今日目标" else "当天目标", "${stats.done} / ${stats.total}") }
@@ -159,7 +160,7 @@ fun TodayScreen(model: RijiViewModel, date: String) {
 }
 
 @Composable
-private fun InkLine(progress: Double, now: String, reminder: Int?) {
+private fun InkLine(progress: Double, now: String, end: String, reminder: Double?) {
     val ink = LocalInk.current
     Column(Modifier.padding(top = 16.dp)) {
         Canvas(Modifier.fillMaxWidth().height(10.dp)) {
@@ -168,15 +169,15 @@ private fun InkLine(progress: Double, now: String, reminder: Int?) {
             drawLine(ink.line, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx())
             drawLine(ink.ink, Offset(0f, y), Offset(x, y), strokeWidth = 2.dp.toPx())
             // 晚间提醒的时刻：一道赭色短刻度
-            if (reminder != null && reminder >= 6 * 60) {
-                val rx = size.width * (reminder - 6 * 60) / (18f * 60)
+            if (reminder != null && reminder > 0) {
+                val rx = size.width * reminder.toFloat()
                 drawLine(ink.ochreSoft, Offset(rx, 0f), Offset(rx, size.height), strokeWidth = 2.dp.toPx())
             }
             drawCircle(ink.paper, radius = 6.5.dp.toPx(), center = Offset(x, y))
             drawCircle(ink.ochre, radius = 5.dp.toPx(), center = Offset(x, y))
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("06:00", style = mono(10.5.sp, ink.ink3)); Text("现在 $now", style = mono(10.5.sp, ink.ink3)); Text("24:00", style = mono(10.5.sp, ink.ink3))
+            Text("06:00", style = mono(10.5.sp, ink.ink3)); Text("现在 $now", style = mono(10.5.sp, ink.ink3)); Text(end, style = mono(10.5.sp, ink.ink3))
         }
     }
 }
@@ -605,6 +606,17 @@ fun MeScreen(model: RijiViewModel) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(ink.line))
         Eyebrow("同步")
         Text("一键同步（手机 → 腾讯云 → GitHub，与 MacBook 和个人网站互通）在下一阶段开放。现在的内容只在这台手机上。", style = body(13.5.sp, ink.ink2))
+        Eyebrow("一天")
+        Text("一天结束于", style = body(14.5.sp, ink.ink))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (minutes in listOf(0, 120, 180, 240, 300)) {
+                val on = model.dayStart == minutes
+                Text(if (minutes == 0) "零点" else "${minutes / 60} 点", style = mono(12.sp, if (on) ink.paper else ink.ink2),
+                    modifier = Modifier.background(if (on) ink.ink else ink.paper2, RoundedCornerShape(8.dp))
+                        .clickable { model.changeDayStart(minutes) }.padding(horizontal = 12.dp, vertical = 7.dp))
+            }
+        }
+        Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。", style = body(13.sp, ink.ink3))
         Eyebrow("晚间提醒")
         val context = androidx.compose.ui.platform.LocalContext.current
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
