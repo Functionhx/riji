@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,8 +18,22 @@ android {
         versionName = "0.1.0"
     }
 
+    // 发布签名：密钥只在站长本机（~/.riji/android-release.properties，或环境变量 RIJI_RELEASE_PROPERTIES 指向的文件），
+    // 不进仓库。没有它时 release 包不签名（CI 只编调试包）。
+    val releaseProperties = File(System.getenv("RIJI_RELEASE_PROPERTIES") ?: "${System.getProperty("user.home")}/.riji/android-release.properties")
+    signingConfigs {
+        if (releaseProperties.exists()) create("release") {
+            val props = Properties().apply { releaseProperties.inputStream().use(::load) }
+            storeFile = File(props.getProperty("storeFile"))
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
