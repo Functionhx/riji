@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp"
+    android:viewportWidth="1024" android:viewportHeight="1024">
+    <!-- 由 design/icon/icon.py 生成：山与升起的太阳 -->
+    <group android:translateX="-120" android:translateY="-180" android:scaleX="1.25" android:scaleY="1.25">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M574,438 a90,90 0 1,1 0,180 a90,90 0 1,1 0,-180z"/>
+        <path android:fillColor="#FFFFFFFF" android:pathData="M250 720 C318 700 352 640 390 600 C414 574 428 520 448 506 C466 512 484 560 506 590 C526 616 548 628 578 616 C606 604 626 584 652 590 C688 598 720 640 770 680 V760 H250 Z"/>
+    </group>
+</vector>

@@ -83,7 +83,7 @@ class EveningReminder : BroadcastReceiver() {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "晚间总结", NotificationManager.IMPORTANCE_DEFAULT))
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
             val notification = NotificationCompat.Builder(context, CHANNEL)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle(nudge.title)
                 .setContentText(nudge.body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(nudge.body))

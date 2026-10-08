@@ -1,3 +1,5 @@
+<img src="site/assets/icon-rounded-512.webp" width="96" alt="日迹的图标：墨绿底上一张便利贴，画着山和升起的太阳">
+
 # 日迹
 
 每天一页的个人笔记：记灵感、做 TODO、推进长期进度、晚上写一句总结。
@@ -7,6 +9,8 @@
 - 设计文档：[docs/DESIGN.md](docs/DESIGN.md)
 - 视觉原型：[design/prototype.html](design/prototype.html)（方向 A · 纸与墨）
 - 同步规格与跨平台测试向量：[spec/](spec/)
+- 图标「便利贴日出」：[design/icon/](design/icon/)（`icon.py` 生成全部图层，`png.mjs` 渲染 Android 与网页用的 PNG）
+- 宣传页：[site/](site/)（单个 `index.html`，无外部依赖）
 
 ## 现状（2026-10-08）
 

@@ -74,7 +74,9 @@ enum AppBootstrap {
         }
         #endif
         if isDemo {
-            let model = RijiModel.preview()
+            // RIJI_NOW=2026-10-08T15:20:00+08:00：截图用的固定时刻
+            let now = ProcessInfo.processInfo.environment["RIJI_NOW"].flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
+            let model = RijiModel.preview(now: now)
             switch ProcessInfo.processInfo.environment["RIJI_ROUTE"] {
             case "timeline": model.route = .timeline
             case "progress": model.route = .progress

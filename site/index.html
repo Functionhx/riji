@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>日迹 · 每天一页，留下痕迹</title>
+<meta name="description" content="日迹：每天一页的个人笔记。记灵感、定目标、推进长期进度；晚上一句总结，再写下明天——明早醒来，它已经在今天的第一行。macOS 与 Android。">
+<meta name="theme-color" content="#FAF8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="日迹 · 每天一页，留下痕迹">
+<meta property="og:description" content="晚上写下明天，明早它就在今天的第一行。只提醒你缺的那一样。">
+<meta property="og:image" content="assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<style>
+:root{
+  --paper:#FAF8F3;--paper2:#F2EFE7;--paper3:#EAE5D9;--ink:#1D1C1A;--ink2:#55524A;--ink3:#8F8B80;--line:#E6E2D8;
+  --ochre:#B5762A;--ochre-soft:#EAD2AD;--green:#2E3F38;--green2:#1B2421;
+  --sticky-yellow:#F6E7A8;--sticky-pink:#F3D6D6;--sticky-mint:#D7E9DD;--sticky-blue:#D6E2F1;--sticky-ink:#3A372C;
+  --serif:"Songti SC","Noto Serif SC","Source Han Serif SC","Noto Serif CJK SC","STSong",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","MiSans","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  --hand:"Kaiti SC","STKaiti","LXGW WenKai","KaiTi",var(--serif);
+  --shadow:0 1px 2px rgba(40,30,10,.06),0 12px 32px rgba(40,30,10,.10);
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#141413;--paper2:#1C1B19;--paper3:#25231F;--ink:#F3F0E8;--ink2:#B5B1A6;--ink3:#7D796F;--line:#2D2B27;
+  --ochre:#D79A4E;--ochre-soft:#5A4428;
+  --sticky-yellow:#4A4426;--sticky-pink:#4A3434;--sticky-mint:#2F4236;--sticky-blue:#2F3A4B;--sticky-ink:#EFE9D6;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 14px 40px rgba(0,0,0,.45);
+}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}
+img{max-width:100%;height:auto;display:block}
+.wrap{max-width:1160px;margin:0 auto;padding:0 28px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.18em;color:var(--ink3);text-transform:uppercase}
+h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:.02em;margin:0}
+.lead{color:var(--ink2);font-size:18px}
+
+/* ---------------------------------------------------------------- 顶栏 */
+.nav{position:sticky;top:0;z-index:20;backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);
+  background:color-mix(in srgb,var(--paper) 78%,transparent);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.nav .wrap{display:flex;align-items:center;gap:28px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:600 19px var(--serif)}
+.brand img{width:30px;height:30px;border-radius:7px;box-shadow:0 2px 6px rgba(0,0,0,.18)}
+.nav nav{display:flex;gap:22px;margin-left:auto;font-size:14px}
+.nav nav a{text-decoration:none;color:var(--ink2)}
+.nav nav a:hover{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:12px;text-decoration:none;font-weight:600;font-size:15px;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn.primary{background:var(--ink);color:var(--paper);box-shadow:0 8px 20px rgba(30,25,15,.18)}
+.btn.ghost{border:1px solid var(--line);background:var(--paper)}
+.nav .btn{padding:8px 14px;font-size:13px}
+
+/* ---------------------------------------------------------------- 首屏 */
+.hero{padding:76px 0 90px;position:relative}
+.hero .wrap{display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center}
+.hero-icon{width:96px;height:96px;border-radius:22px;box-shadow:0 18px 40px rgba(20,30,25,.28),0 2px 6px rgba(0,0,0,.15);margin-bottom:28px;animation:bob 6s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-6px) rotate(-1deg)}}
+.hero h1{font-size:clamp(44px,6.4vw,76px);line-height:1.12;margin:16px 0 22px}
+.hero h1 em{font-style:normal;color:var(--ochre)}
+.hero .lead{max-width:30em}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.meta{margin-top:18px;font:12.5px var(--mono);color:var(--ink3);letter-spacing:.04em}
+
+/* 活的今天页 */
+.stage{position:relative;padding:20px 10px}
+.page{position:relative;z-index:2;background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:30px 30px 22px}
+.page .eyebrow{font-size:11px}
+.page h3{font-size:40px;margin:8px 0 2px;letter-spacing:.01em}
+.page .sub{color:var(--ink2);font-size:14px}
+.inkline{margin:20px 0 4px;position:relative;height:12px}
+.inkline .track{position:absolute;left:0;right:0;top:5px;height:2px;background:var(--line)}
+.inkline .done{position:absolute;left:0;top:5px;height:2px;background:var(--ink);width:0;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.inkline .now{position:absolute;top:0;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--ochre);box-shadow:0 0 0 3px var(--paper);left:0;transition:left 1.2s cubic-bezier(.2,.8,.2,1)}
+.inkline .now::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1px solid var(--ochre);opacity:0;animation:pulse 2.6s ease-out infinite}
+@keyframes pulse{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+.inkline .tick{position:absolute;top:1px;width:2px;height:10px;background:var(--ochre-soft)}
+.inklabels{display:flex;justify-content:space-between;font:10.5px var(--mono);color:var(--ink3)}
+.sec{display:flex;justify-content:space-between;align-items:baseline;margin-top:22px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.sec span:last-child{font:11px var(--mono);color:var(--ink2)}
+.task{display:flex;align-items:center;gap:12px;padding:9px 0;cursor:pointer;user-select:none}
+.task .c{flex:none;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--ink3);display:grid;place-items:center;transition:all .15s}
+.task.on .c{background:var(--ink);border-color:var(--ink)}
+.task.on .c::after{content:"";width:8px;height:4px;border:2px solid var(--paper);border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.task .t{flex:1;font-size:15px}
+.task.on .t{color:var(--ink3);text-decoration:line-through;text-decoration-color:var(--line)}
+.tag{font:10.5px/1 var(--mono);padding:4px 6px;border-radius:4px;white-space:nowrap}
+.tag.plan{background:var(--paper2);color:var(--ink2)}
+.tag.carry{color:var(--ochre);border:1px solid var(--ochre-soft)}
+.tag.spark{color:var(--ink3)}
+.meter{font:11px var(--mono);color:var(--ink2);white-space:nowrap}
+.meter b{color:var(--ink);font-weight:400;letter-spacing:-1px}
+.meter i{color:var(--ink3);font-style:normal;letter-spacing:-1px}
+.sticky{position:absolute;z-index:3;width:150px;min-height:112px;padding:18px 14px 12px;font:17px/1.45 var(--hand);color:var(--sticky-ink);
+  box-shadow:0 10px 22px rgba(40,30,10,.18);animation:float 7s ease-in-out infinite}
+.sticky::before{content:"";position:absolute;top:-8px;left:50%;width:54px;height:16px;margin-left:-27px;background:rgba(218,209,186,.75)}
+.sticky small{display:block;margin-top:8px;font:10px var(--mono);opacity:.55}
+.sticky.a{background:var(--sticky-yellow);right:-34px;top:-24px;transform:rotate(4deg)}
+.sticky.b{background:var(--sticky-pink);left:-64px;bottom:-78px;transform:rotate(-5deg);animation-delay:-3s}
+@keyframes float{50%{translate:0 -7px}}
+
+/* ---------------------------------------------------------------- 一天的形状 */
+section{padding:96px 0}
+.head{max-width:780px;margin-bottom:48px}
+.head h2{font-size:clamp(30px,4vw,44px);line-height:1.25;margin:14px 0 14px}
+.day{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:22px;padding-top:34px}
+.day::before{content:"";position:absolute;left:0;right:0;top:9px;height:2px;background:var(--line)}
+.day .fill{position:absolute;left:0;top:9px;height:2px;background:var(--ink);width:0;transition:width 2.4s cubic-bezier(.3,.7,.2,1)}
+.day .sun{position:absolute;top:3px;left:0;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--ochre);box-shadow:0 0 0 4px var(--paper);transition:left 2.4s cubic-bezier(.3,.7,.2,1)}
+.day.go .fill{width:100%}.day.go .sun{left:100%}
+.stop{position:relative}
+.stop::before{content:"";position:absolute;top:-30px;left:0;width:8px;height:8px;border-radius:50%;background:var(--paper);border:2px solid var(--ink3)}
+.stop .when{font:12px var(--mono);color:var(--ochre);letter-spacing:.06em}
+.stop h3{font-size:21px;margin:6px 0 8px}
+.stop p{margin:0;color:var(--ink2);font-size:14.5px}
+
+/* ---------------------------------------------------------------- 真实的样子 */
+.shots{display:grid;grid-template-columns:1fr 280px;gap:40px;align-items:end}
+.window{border-radius:14px;overflow:hidden;box-shadow:0 30px 70px rgba(30,20,5,.22),0 0 0 1px var(--line)}
+.phone{border-radius:38px;padding:10px;background:#111;box-shadow:0 30px 60px rgba(0,0,0,.28)}
+.phone img{border-radius:29px}
+.caption{margin-top:16px;color:var(--ink3);font-size:13.5px;text-align:center}
+
+/* ---------------------------------------------------------------- 功能 */
+.bento{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.card{background:var(--paper2);border-radius:20px;padding:28px;overflow:hidden;position:relative;min-height:290px;display:flex;flex-direction:column}
+.card.wide{grid-column:span 2}
+.card h3{font-size:22px;margin-bottom:8px}
+.card p{margin:0 0 22px;color:var(--ink2);font-size:14.5px}
+.card .demo{margin-top:auto}
+.mini{background:var(--paper);border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.mini .eyebrow{font-size:10px;margin-bottom:6px}
+.row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:14px}
+.row .arrow{color:var(--ochre);font-weight:700;width:18px}
+.flow{display:grid;grid-template-columns:1fr 44px 1fr;align-items:center}
+.flow .mid{text-align:center;color:var(--ochre);font-size:22px}
+.bar{height:3px;background:var(--line);border-radius:2px;margin:6px 0 12px}
+.bar i{display:block;height:3px;background:var(--ink);border-radius:2px}
+.pr{display:flex;justify-content:space-between;font-size:14px}
+.pr span:last-child{font:12px var(--mono);color:var(--ink3)}
+.notes{display:flex;gap:12px;justify-content:center;padding:8px 0 4px}
+.notes .sticky{position:relative;animation:none;width:116px;min-height:96px;font-size:15px;padding:16px 11px 10px}
+.heat{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;grid-auto-columns:11px;gap:3px;justify-content:start}
+.heat i{border-radius:2px;background:var(--line)}
+.heat i.l1{background:#E3DCCB}.heat i.l2{background:#C9BFA6}.heat i.l3{background:#8F8670}.heat i.l4{background:#3A372F}
+@media (prefers-color-scheme:dark){.heat i.l1{background:#2E2B26}.heat i.l2{background:#4E4A40}.heat i.l3{background:#8C8574}.heat i.l4{background:#E8E1CF}}
+.heat i.today{outline:1.5px solid var(--ochre);outline-offset:1px}
+.banner{display:flex;gap:12px;align-items:flex-start;background:color-mix(in srgb,var(--paper) 86%,transparent);backdrop-filter:blur(10px);border:1px solid var(--line);
+  border-radius:16px;padding:12px 14px;box-shadow:0 10px 28px rgba(30,20,5,.12);max-width:380px}
+.banner img{width:38px;height:38px;border-radius:9px}
+.banner b{display:block;font-size:14px}
+.banner span{font-size:13px;color:var(--ink2)}
+.banner small{margin-left:auto;font:11px var(--mono);color:var(--ink3);white-space:nowrap}
+.mail{margin-top:12px;max-width:380px;font:12.5px var(--mono);color:var(--ink2);border-left:2px solid var(--ochre);padding:4px 0 4px 12px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.duo div{border-radius:12px;padding:14px;font:13px var(--serif);min-height:110px}
+.duo .l{background:#FAF8F3;color:#1D1C1A;border:1px solid #E6E2D8}
+.duo .d{background:#141413;color:#F3F0E8}
+.duo b{display:block;font-size:24px;margin:2px 0 8px}
+.duo i{display:block;height:2px;background:currentColor;opacity:.2;margin-top:12px;position:relative}
+.duo i::after{content:"";position:absolute;left:58%;top:-4px;width:10px;height:10px;border-radius:50%;background:#B5762A}
+
+/* ---------------------------------------------------------------- 隐私 */
+.privacy{background:linear-gradient(160deg,var(--green),var(--green2));color:#EFEADF;border-radius:28px;margin:0 28px;padding:84px 0}
+.privacy .eyebrow{color:#AFC0B6}
+.privacy .lead{color:#C9D3CC}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.trio div{border-top:1px solid rgba(239,234,223,.18);padding-top:20px}
+.trio h3{font-size:21px;margin-bottom:10px;color:#FBF7EE}
+.trio p{margin:0;color:#C3CDC6;font-size:14.5px}
+.pill{display:inline-block;margin-top:12px;font:11px/1 var(--mono);padding:5px 8px;border-radius:5px;background:rgba(239,234,223,.1);color:#E9D9B8}
+
+/* ---------------------------------------------------------------- 下载 */
+.platforms{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.plat{border:1px solid var(--line);border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:6px;background:var(--paper)}
+.plat h3{font-size:20px}
+.plat .ver{font:12px var(--mono);color:var(--ink3)}
+.plat p{margin:6px 0 16px;color:var(--ink2);font-size:14px;flex:1}
+.plat.soon{background:var(--paper2);border-style:dashed}
+.plat.soon h3{color:var(--ink2)}
+.state{align-self:flex-start;font:11px/1 var(--mono);padding:5px 8px;border-radius:5px;background:var(--paper2);color:var(--ink2)}
+.state.ok{background:color-mix(in srgb,var(--ochre) 14%,transparent);color:var(--ochre)}
+pre{margin:26px 0 0;background:var(--paper2);border-radius:14px;padding:18px 20px;font:13px/1.7 var(--mono);color:var(--ink2);overflow-x:auto}
+pre b{color:var(--ink);font-weight:500}
+
+footer{padding:56px 0 70px;color:var(--ink3);font-size:13.5px}
+footer .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+footer img{width:28px;height:28px;border-radius:7px}
+footer nav{margin-left:auto;display:flex;gap:18px}
+footer a{text-decoration:none}footer a:hover{color:var(--ink)}
+
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .8s ease,transform .8s ease}
+.reveal.in{opacity:1;transform:none}
+
+@media (max-width:980px){
+  .hero .wrap{grid-template-columns:1fr;gap:48px}
+  .day{grid-template-columns:1fr;gap:26px;padding:0 0 0 30px}
+  .day::before,.day .fill{top:0;bottom:0;left:9px;right:auto;width:2px;height:auto}
+  .day .fill{height:0}.day.go .fill{width:2px;height:100%}
+  .day .sun{left:3px;top:0;margin:0}.day.go .sun{left:3px;top:100%}
+  .stop::before{top:8px;left:-26px}
+  .shots{grid-template-columns:1fr;justify-items:center}.phone{max-width:280px}
+  .bento{grid-template-columns:1fr}.card.wide{grid-column:auto}
+  .trio,.platforms{grid-template-columns:1fr 1fr}
+  .nav nav{display:none}
+}
+@media (max-width:620px){
+  .wrap{padding:0 20px}
+  .hero{padding-top:44px}
+  .sticky.a{right:-6px;top:-40px;width:130px}.sticky.b{left:-6px;bottom:-84px;width:130px}
+  .page{padding:24px 20px 18px}
+  .trio,.platforms{grid-template-columns:1fr}
+  .privacy{margin:0 12px;border-radius:22px;padding:64px 0}
+  section{padding:72px 0}
+  .flow{grid-template-columns:1fr}.flow .mid{transform:rotate(90deg);padding:6px 0}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/icon-rounded-512.webp" alt="">日迹</a>
+    <nav><a href="#day">一天</a><a href="#features">功能</a><a href="#privacy">隐私</a><a href="#download">下载</a></nav>
+    <a class="btn ghost" href="https://github.com/Functionhx/riji">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- 首屏 -->
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <img class="hero-icon" src="assets/icon-rounded-512.webp" alt="日迹的图标：墨绿底上一张便利贴，画着山和升起的太阳">
+        <div class="eyebrow">RIJI · 一款每日笔记</div>
+        <h1>每天一页，<br>留下<em>痕迹</em>。</h1>
+        <p class="lead">记灵感、定目标、推进长期进度；晚上一句总结，再写下明天。明早醒来，昨晚定的目标已经在今天的第一行。</p>
+        <div class="cta">
+          <a class="btn primary" href="#download">免费下载</a>
+          <a class="btn ghost" href="#day">看看一天怎么过 →</a>
+        </div>
+        <div class="meta">macOS 26 · Android 12+ · 数据只在你的设备上</div>
+      </div>
+
+      <div class="stage" aria-label="日迹的今天页（示意，可以点着勾选）">
+        <div class="sticky a">每日日志<br>提醒功能<small>13:47 · 已转目标</small></div>
+        <div class="page">
+          <div class="eyebrow" id="today-eyebrow">2026 · 10 · 08 · THU · 连续 12 天</div>
+          <h3 id="today-title">10 月 8 日</h3>
+          <div class="sub" id="today-sub">星期四 · 今天还剩 10 小时 12 分</div>
+          <div class="inkline"><div class="track"></div><div class="done" id="ink-done"></div><div class="tick" id="ink-tick" title="22:30 晚间提醒"></div><div class="now" id="ink-now"></div></div>
+          <div class="inklabels"><span>06:00</span><span id="ink-label">现在 13:47</span><span>24:00</span></div>
+          <div class="sec"><span class="eyebrow">今日目标</span><span id="count">1 / 4</span></div>
+          <div class="task"><span class="c"></span><span class="t">背 50 个单词</span><span class="tag plan">昨日定</span></div>
+          <div class="task on"><span class="c"></span><span class="t">电路 19 讲</span><span class="meter"><b>▓▓▓▓</b><i>▒▒▒▒▒</i> 19/40</span></div>
+          <div class="task"><span class="c"></span><span class="t">sony 继续</span><span class="tag carry">↻ 2 天</span></div>
+          <div class="task"><span class="c"></span><span class="t">参考文献必填</span><span class="tag spark">← Spark</span></div>
+        </div>
+        <div class="sticky b">感觉黑夜模式<br>下更好看？<small>昨天 · 随记</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 一天的形状 -->
+  <section id="day">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="eyebrow">一天的形状</div>
+        <h2>从早上的第一行，到晚上的最后一句。</h2>
+        <p class="lead">日迹不让你维护一套系统。它只是把每一天接起来：昨晚的一句话，变成今早的第一件事。</p>
+      </div>
+      <div class="day reveal" id="day-line">
+        <div class="fill"></div><div class="sun"></div>
+        <div class="stop"><div class="when">07:30 · 醒来</div><h3>昨晚写的，在第一行</h3><p>明日目标在零点后自动排进今天第一行，标着「昨日定」。不用再抄一遍。</p></div>
+        <div class="stop"><div class="when">白天 · 随手</div><h3>一闪而过的，贴一张</h3><p>灵感贴成 Spark 便利贴；写「电路 19 讲」，勾掉时长期进度自己往前走。</p></div>
+        <div class="stop"><div class="when">22:30 · 提醒</div><h3>只提缺的那一样</h3><p>总结写了就只问明天，目标定了就只问总结。都写好了，今晚安安静静。</p></div>
+        <div class="stop"><div class="when">23:00 · 兜底</div><h3>还空着？发封邮件</h3><p>通知被划掉也没关系：一封邮件送到你常看的邮箱，一天最多一封。</p></div>
+        <div class="stop"><div class="when">明天 · 继续</div><h3>没做完的，自己跟上</h3><p>未完成的事带到明天，记着「↻ 2 天」。删掉，就是放下。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 真实的样子 -->
+  <section style="padding-top:20px">
+    <div class="wrap">
+      <div class="shots reveal">
+        <div>
+          <div class="window">
+            <picture>
+              <source srcset="assets/mac-dark.webp" media="(prefers-color-scheme: dark)">
+              <img src="assets/mac-light.webp" alt="日迹 macOS 版的今天页：今日目标、Spark 便利贴、进度与热力图" width="1600" height="1006">
+            </picture>
+          </div>
+          <div class="caption">macOS · 三栏：侧栏、今天页、热力图与进度</div>
+        </div>
+        <div>
+          <div class="phone"><img src="assets/android-today.webp" alt="日迹 Android 版的今天页" width="720" height="1600"></div>
+          <div class="caption">Android · 底部速记条，一只手就够</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 功能 -->
+  <section id="features">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="eyebrow">它会做的事</div>
+        <h2>少即是多，但该有的都在。</h2>
+      </div>
+      <div class="bento">
+        <div class="card wide reveal">
+          <h3>晚上写下明天，明早它就在第一行</h3>
+          <p>今日总结与明日目标在页尾一张卡里。零点一过，目标排进新一天的「今日目标」；和没做完的事重名的，只留一条。</p>
+          <div class="demo flow">
+            <div class="mini"><div class="eyebrow">今晚 · 明日目标</div>
+              <div class="row"><span class="arrow">↳</span>背 50 个单词</div>
+              <div class="row"><span class="arrow">↳</span>电路 20 讲</div></div>
+            <div class="mid">→</div>
+            <div class="mini"><div class="eyebrow">明早 · 今日目标</div>
+              <div class="row"><span class="c" style="width:16px;height:16px;border:1.5px solid var(--ink3);border-radius:50%"></span>背 50 个单词<span class="tag plan" style="margin-left:auto">昨日定</span></div>
+              <div class="row"><span class="c" style="width:16px;height:16px;border:1.5px solid var(--ink3);border-radius:50%"></span>电路 20 讲<span class="tag plan" style="margin-left:auto">昨日定</span></div></div>
+          </div>
+        </div>
+        <div class="card reveal">
+          <h3>长期进度，自己往前走</h3>
+          <p>写「电路 19 讲」「马原 第 6 章」，自动归到对应的进度；勾掉，进度就推进。</p>
+          <div class="demo mini">
+            <div class="pr"><span>电路</span><span>19/40 讲</span></div><div class="bar"><i style="width:47%"></i></div>
+            <div class="pr"><span>英语单词</span><span>26/60 天</span></div><div class="bar"><i style="width:43%"></i></div>
+            <div class="pr"><span>马原</span><span>6/8 章</span></div><div class="bar" style="margin-bottom:2px"><i style="width:75%"></i></div>
+          </div>
+        </div>
+        <div class="card reveal">
+          <h3>Spark：一闪念，贴一张</h3>
+          <p>四种纸色，手写字。哪张想做了，右键变成今天的目标。</p>
+          <div class="demo notes">
+            <div class="sticky" style="background:var(--sticky-mint);transform:rotate(-3deg)">同桌理论</div>
+            <div class="sticky" style="background:var(--sticky-blue);transform:rotate(2.5deg)">继续浏览·全部文章？</div>
+          </div>
+        </div>
+        <div class="card reveal">
+          <h3>一年的格子</h3>
+          <p>每天一格，颜色越深做得越多；今天描一道赭色的边。</p>
+          <div class="demo"><div class="heat" id="heat"></div><div class="meter" style="margin-top:10px" id="streak">连续 12 天</div></div>
+        </div>
+        <div class="card reveal">
+          <h3>纸与墨，白天黑夜</h3>
+          <p>米白的纸、墨色的字、一点赭石。深色模式不是反色，是夜里的另一张纸。</p>
+          <div class="demo duo"><div class="l">今天<b>10 月 8 日</b><i></i></div><div class="d">今天<b>10 月 8 日</b><i></i></div></div>
+        </div>
+        <div class="card wide reveal">
+          <h3>提醒得刚刚好</h3>
+          <p>到点时日迹先看一眼今天：缺总结就问总结，缺目标就问明天，都写好了就不打扰。通知之后仍空着，再发一封邮件兜底，可以同时发给 QQ、163、Gmail、Outlook。</p>
+          <div class="demo">
+            <div class="banner"><img src="assets/icon-rounded-512.webp" alt=""><div><b>今日总结还没写</b><span>今天完成 3/5。明天的目标定好了，再用一句话记下今天。</span></div><small>22:30</small></div>
+            <div class="mail">23:00 · 日迹 · 今日总结还没写 —— 只有这几个数字，没有你的笔记</div>
+          </div>
+        </div>
+        <div class="card reveal">
+          <h3>没做完的，自己跟上</h3>
+          <p>没勾的事第二天自动出现在最上面，记着带了几天；原来那天留着灰色的记录，历史不改写。删掉，就是放下。</p>
+          <div class="demo mini">
+            <div class="row"><span class="c" style="width:16px;height:16px;border:1.5px solid var(--ink3);border-radius:50%"></span>sony 继续<span class="tag carry" style="margin-left:auto">↻ 2 天</span></div>
+            <div class="row" style="color:var(--ink3)"><span class="c" style="width:16px;height:16px;border:1.5px solid var(--line);border-radius:50%"></span>整理旧笔记<span class="tag spark" style="margin-left:auto">已放下</span></div>
+            <div class="row" style="color:var(--ink3)"><span class="c" style="width:16px;height:16px;border:1.5px solid var(--line);border-radius:50%"></span>英语单词<span class="tag spark" style="margin-left:auto">已延续 →</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 隐私 -->
+  <section id="privacy" class="privacy">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="eyebrow">隐私</div>
+        <h2>你的日子，只属于你。</h2>
+        <p class="lead">日迹和作者的个人网站连在一起，但只交出你点头的那一点点。</p>
+      </div>
+      <div class="trio reveal">
+        <div><h3>先在你的设备上</h3><p>所有内容先保存在本机。多设备同步上线后，离开设备的每一段都先用 AES-256-GCM 加密，服务器和私有仓库只见密文。</p><span class="pill">同步 · 下一阶段</span></div>
+        <div><h3>提醒只看数字</h3><p>邮件兜底只知道今天的几个数字：总结写没写、目标几条、完成几件。笔记内容从不离开你的设备。</p><span class="pill">已上线</span></div>
+        <div><h3>公开什么，你说了算</h3><p>网站上只出现你允许的数字，比如「今日 3/5 · 连续 12 天」。想发成一篇日志，也要你点一下。</p><span class="pill">网站连接 · 下一阶段</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 下载 -->
+  <section id="download">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="eyebrow">下载</div>
+        <h2>在你每天都会打开的地方。</h2>
+        <p class="lead">先做了 macOS 和 Android；iPhone、iPad 与 Windows 在路上。</p>
+      </div>
+      <div class="platforms reveal">
+        <div class="plat"><span class="state ok">可用</span><h3>macOS</h3><div class="ver">macOS 26 及以上</div><p>三栏布局、⌘T 回到今天、⌘, 设置提醒。第一次打开：右键 → 打开。</p><a class="btn primary" href="https://github.com/Functionhx/riji/releases/latest">下载 macOS 版</a></div>
+        <div class="plat"><span class="state ok">测试中</span><h3>Android</h3><div class="ver">Android 12 及以上</div><p>荣耀等国行机型无需谷歌服务；记得允许自启动，提醒才准时。</p><a class="btn primary" href="https://github.com/Functionhx/riji/releases/latest">下载 APK</a></div>
+        <div class="plat soon"><span class="state">以后</span><h3>iPhone · iPad</h3><div class="ver">与 macOS 共用代码</div><p>已经能编译，等适配好手势与小屏再发布。</p></div>
+        <div class="plat soon"><span class="state">以后</span><h3>Windows</h3><div class="ver">计划中</div><p>同一套同步协议，换一副外壳。</p></div>
+      </div>
+      <pre><b># 想自己编译？</b>
+git clone https://github.com/Functionhx/riji
+cd riji/apple/Riji && xcodegen generate && open Riji.xcodeproj   <b># macOS：选 RijiMac，⌘R</b>
+cd riji/android && ./gradlew :app:installDebug                    <b># Android</b></pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <img src="assets/icon-rounded-512.webp" alt="">
+    <span>日迹 · ƒ Function 出品 · © 2026 樊宇琛</span>
+    <nav><a href="https://fanyuchen.com.cn">个人网站</a><a href="https://github.com/Functionhx/riji">GitHub</a></nav>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // 首屏的今天页：按北京时间（与应用一致）显示今天、剩余时间与墨线
+  const zone = "Asia/Shanghai";
+  const weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+  const codes = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const $ = (id) => document.getElementById(id);
+  function parts(date) {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short" }).formatToParts(date).map((x) => [x.type, x.value]));
+    return { y: p.year, m: +p.month, d: +p.day, h: +p.hour, min: +p.minute, w: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday) };
+  }
+  function paint() {
+    const now = parts(new Date());
+    const mm = String(now.m).padStart(2, "0"), dd = String(now.d).padStart(2, "0");
+    $("today-eyebrow").textContent = `${now.y} · ${mm} · ${dd} · ${codes[now.w]} · 连续 12 天`;
+    $("today-title").textContent = `${now.m} 月 ${now.d} 日`;
+    const left = 24 * 60 - (now.h * 60 + now.min);
+    $("today-sub").textContent = `${weekdays[now.w]} · 今天还剩 ${Math.floor(left / 60)} 小时 ${left % 60} 分`;
+    const progress = Math.min(1, Math.max(0, (now.h * 60 + now.min - 360) / (18 * 60)));
+    $("ink-done").style.width = progress * 100 + "%";
+    $("ink-now").style.left = progress * 100 + "%";
+    $("ink-label").textContent = `现在 ${String(now.h).padStart(2, "0")}:${String(now.min).padStart(2, "0")}`;
+  }
+  $("ink-tick").style.left = ((22.5 * 60 - 360) / (18 * 60)) * 100 + "%";
+  requestAnimationFrame(() => requestAnimationFrame(paint));
+  setInterval(paint, 30000);
+
+  // 可以点着勾选（只在这一页里，不保存）
+  const tasks = [...document.querySelectorAll(".page .task")];
+  const count = () => { $("count").textContent = `${tasks.filter((t) => t.classList.contains("on")).length} / ${tasks.length}`; };
+  tasks.forEach((t) => t.addEventListener("click", () => { t.classList.toggle("on"); count(); }));
+  count();
+
+  // 一年的格子：确定的伪随机，今天在最后一格
+  const heat = $("heat");
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const weeks = window.matchMedia("(max-width:620px)").matches ? 18 : 22;
+  for (let i = 0; i < weeks * 7; i++) {
+    const cell = document.createElement("i");
+    const recent = i > weeks * 7 - 13;
+    const r = rand();
+    const level = recent ? 2 + Math.floor(r * 3) : r < 0.22 ? 0 : 1 + Math.floor(r * 4);
+    if (level) cell.className = "l" + Math.min(4, level);
+    if (i === weeks * 7 - 1) cell.classList.add("today");
+    heat.appendChild(cell);
+  }
+
+  // 进入视口时淡入；一天的墨线走一遍
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      e.target.classList.add("in");
+      if (e.target.id === "day-line") setTimeout(() => e.target.classList.add("go"), 250);
+      io.unobserve(e.target);
+    }
+  }, { threshold: 0.18 });
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+})();
+</script>
+</body>
+</html>
