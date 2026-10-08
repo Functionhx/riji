@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 晚间提醒：本地闹钟 + 通知（不依赖谷歌推送，荣耀国行机同样可用） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 邮件提醒（兜底）：向 fanyuchen.com.cn/riji/api/ 上报今天的几个数字 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 准点提醒：13+ 用 USE_EXACT_ALARM（自动授予；日迹不上架商店），12 用 SCHEDULE_EXACT_ALARM（该版本自动授予） -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />

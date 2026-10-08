@@ -1,0 +1,14 @@
+name: server
+on:
+  push:
+    paths: ["server/**", ".github/workflows/server.yml"]
+  pull_request:
+    paths: ["server/**"]
+permissions:
+  contents: read
+jobs:
+  reminder:
+    runs-on: ubuntu-22.04  # 与腾讯云同为 Python 3.10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest server/reminder/test_reminder.py -v

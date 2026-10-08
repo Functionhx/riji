@@ -6,6 +6,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.functionhx.riji.core.BlockKind
 import com.functionhx.riji.core.ChangeLog
 import com.functionhx.riji.core.DailyBook
@@ -33,12 +39,21 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
     var tab by mutableStateOf(Tab.TODAY)
     var error by mutableStateOf<String?>(null)
         private set
+    private var device = ""
+
+    // 邮件提醒（兜底）的设置与最近一次上报的结果
+    var mail by mutableStateOf(MailReminder.load(application))
+        private set
+    var mailStatus by mutableStateOf("")
+        private set
+    private var reportJob: Job? = null
 
     init {
         val prefs = application.getSharedPreferences("riji", 0)
         val device = prefs.getString("device", null) ?: "android-${UUID.randomUUID().toString().take(8)}".also {
             prefs.edit().putString("device", it).apply()
         }
+        this.device = device
         val log = ChangeLog(File(application.filesDir, "riji/changes.jsonl"))
         book = DailyBook(RecordStore(log, device))
         today = book.clock.key(Instant.now())
@@ -76,6 +91,43 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
             "没能保存：${e.message}"
         }
         revision++
+        scheduleReport()
+    }
+
+    /** 内容变了：一秒后上报今天的数字（连续修改只报最后一次）。 */
+    fun scheduleReport() {
+        reportJob?.cancel()
+        reportJob = viewModelScope.launch {
+            delay(1_000)
+            val app = getApplication<Application>()
+            val result = withContext(Dispatchers.IO) { MailReminder.report(app, device, today, book.evening(today)) } ?: return@launch
+            when (result) {
+                is MailReminder.Result.Ok -> {
+                    mailStatus = result.message
+                    if (result.adopted) {
+                        mail = MailReminder.load(app)
+                        reminderOn = EveningReminder.enabled(app)
+                        reminderMinutes = EveningReminder.minutes(app)
+                    }
+                }
+                is MailReminder.Result.Failed -> mailStatus = result.message
+            }
+        }
+    }
+
+    fun updateMail(settings: MailReminder.Settings) {
+        val tokenOnly = settings.copy(token = mail.token) == mail
+        mail = settings
+        MailReminder.save(getApplication(), settings, touch = !tokenOnly)
+        scheduleReport()
+    }
+
+    fun sendTestMail() {
+        mailStatus = "正在发送…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { MailReminder.sendTest(getApplication()) }
+            mailStatus = when (result) { is MailReminder.Result.Ok -> result.message; is MailReminder.Result.Failed -> result.message }
+        }
     }
 
     // 读取前先读 revision，建立重组依赖
@@ -101,6 +153,8 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         reminderOn = on
         reminderMinutes = minutes
         EveningReminder.save(getApplication(), on, minutes)
+        MailReminder.touch(getApplication())
+        scheduleReport()
     }
 
     // 写入

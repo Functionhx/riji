@@ -28,6 +28,8 @@ struct RijiApp: App {
                     guard !AppBootstrap.isDemo else { return }
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
+                    await MailReminder.shared.report(book: model.book, today: model.today,
+                                                     device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")
                     await EveningReminder.reschedule(book: model.book, today: model.today, now: model.currentDate)
                 }
                 .overlay(alignment: .bottom) {
@@ -52,7 +54,7 @@ struct RijiApp: App {
         #endif
         #if os(macOS)
         Settings {
-            ReminderSettingsView().frame(width: 420)
+            ReminderSettingsView().frame(width: 480)
         }
         #endif
     }

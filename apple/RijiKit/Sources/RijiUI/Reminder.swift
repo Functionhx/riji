@@ -62,27 +62,76 @@ public enum EveningReminder {
     }
 }
 
-/// 设置窗口（macOS ⌘,）。
+/// 设置窗口（macOS ⌘,）。改动经过下面的绑定时记下修改时间（MailReminder.touch），多设备以最新的一份为准。
 public struct ReminderSettingsView: View {
     @AppStorage(ReminderSettings.enabledKey) private var enabled = ReminderSettings.defaultEnabled
     @AppStorage(ReminderSettings.minutesKey) private var minutes = ReminderSettings.defaultMinutes
+    @AppStorage(MailReminder.emailKey) private var email = false
+    @AppStorage(MailReminder.recipientsKey) private var recipients = ""
+    @AppStorage(MailReminder.delayKey) private var delay = 60
+    @State private var token = ""
+    private let mail = MailReminder.shared
 
     public init() {}
 
     public var body: some View {
+        let parsed = MailReminder.parse(recipients)
         Form {
             Section {
-                Toggle("每晚提醒写今日总结和明日目标", isOn: $enabled)
+                Toggle("每晚提醒写今日总结和明日目标", isOn: touched($enabled))
                 DatePicker("提醒时间", selection: time, displayedComponents: .hourAndMinute)
                     .disabled(!enabled)
+            } header: {
+                Text("系统通知")
             } footer: {
                 Text("都写好了就不提醒；只差一样，就只提那一样。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Section {
+                Toggle("通知之后仍没写，发邮件提醒", isOn: touched($email))
+                TextField("收件邮箱", text: touched($recipients), prompt: Text("可填多个，用逗号或换行隔开"), axis: .vertical)
+                    .lineLimit(1...4)
+                if !parsed.invalid.isEmpty {
+                    Text("格式不对：" + parsed.invalid.joined(separator: "、")).font(.caption).foregroundStyle(.red)
+                } else if parsed.valid.count > MailReminder.maxRecipients {
+                    Text("最多 \(MailReminder.maxRecipients) 个，多出的不会收到").font(.caption).foregroundStyle(.red)
+                }
+                Picker("兜底时间", selection: touched($delay)) {
+                    ForEach(MailReminder.delays, id: \.self) { minutes in
+                        Text(Self.delayLabel(minutes))
+                    }
+                }
+                SecureField("连接码", text: $token, prompt: Text("riji-…"))
+                    .onSubmit { mail.token = token }
+                    .onChange(of: token) { _, new in mail.token = new }
+                HStack {
+                    Button("发一封测试邮件") { Task { await mail.sendTest() } }
+                        .disabled(token.isEmpty || parsed.valid.isEmpty)
+                    Text(mail.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            } header: {
+                Text("邮件提醒（兜底）")
+            } footer: {
+                Text("到「提醒时间 + 兜底时间」时，今日总结或明日目标仍然空着、或者今天还没打开日迹，就由腾讯云上的服务发一封邮件，一天最多一封。"
+                     + "只上传今天的几个数字（总结写没写、目标几条、完成几件），不上传笔记内容。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
+        .onAppear { token = mail.token }
         .onChange(of: enabled) { _, on in if on { Task { await EveningReminder.requestAuthorization() } } }
+    }
+
+    static func delayLabel(_ minutes: Int) -> String {
+        if minutes < 60 { return "通知后 \(minutes) 分钟" }
+        return minutes % 60 == 0 ? "通知后 \(minutes / 60) 小时" : "通知后 \(minutes / 60).5 小时"
+    }
+
+    /// 用户改动 → 记下修改时间。
+    private func touched<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+        Binding(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0; MailReminder.touch() })
     }
 
     private var time: Binding<Date> {
@@ -91,6 +140,7 @@ public struct ReminderSettingsView: View {
         } set: { date in
             let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
             minutes = (parts.hour ?? 22) * 60 + (parts.minute ?? 30)
+            MailReminder.touch()
         }
     }
 }

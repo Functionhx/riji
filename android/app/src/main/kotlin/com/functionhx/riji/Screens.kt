@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -449,6 +451,61 @@ private fun EditDialog(title: String, initial: String, onDismiss: () -> Unit, on
 
 // ---------------------------------------------------------------- 时间线 / 进度 / 我
 
+/** 邮件提醒（兜底）：开关、收件邮箱（可多个）、兜底时间、连接码、测试邮件。 */
+@Composable
+private fun MailSettings(model: RijiViewModel) {
+    val ink = LocalInk.current
+    val mail = model.mail
+    var recipients by remember { mutableStateOf(mail.recipients) }
+    var token by remember { mutableStateOf(mail.token) }
+    LaunchedEffect(mail.recipients) { if (mail.recipients != recipients && MailReminder.parse(mail.recipients) != MailReminder.parse(recipients)) recipients = mail.recipients }
+    val (valid, invalid) = MailReminder.parse(recipients)
+    Eyebrow("邮件提醒（兜底）")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("通知之后仍没写，发邮件提醒", style = body(14.5.sp, ink.ink), modifier = Modifier.weight(1f))
+        Switch(mail.email, { model.updateMail(mail.copy(email = it)) })
+    }
+    LabeledField("收件邮箱（可填多个，用逗号或换行隔开）", recipients, singleLine = false) {
+        recipients = it
+        model.updateMail(model.mail.copy(recipients = it))
+    }
+    if (invalid.isNotEmpty()) Text("格式不对：" + invalid.joinToString("、"), style = body(12.sp, Color(0xFFB5443A)))
+    else if (valid.size > MailReminder.MAX_RECIPIENTS) Text("最多 ${MailReminder.MAX_RECIPIENTS} 个，多出的不会收到", style = body(12.sp, Color(0xFFB5443A)))
+    Text("兜底时间", style = body(13.sp, ink.ink2))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (minutes in MailReminder.delays) {
+            val on = mail.delay == minutes
+            val label = if (minutes < 60) "$minutes 分" else if (minutes % 60 == 0) "${minutes / 60} 小时" else "${minutes / 60}.5 小时"
+            Text(label, style = mono(12.sp, if (on) ink.paper else ink.ink2),
+                modifier = Modifier.background(if (on) ink.ink else ink.paper2, RoundedCornerShape(8.dp))
+                    .clickable { model.updateMail(mail.copy(delay = minutes)) }.padding(horizontal = 12.dp, vertical = 7.dp))
+        }
+    }
+    LabeledField("连接码", token, singleLine = true, secret = true) {
+        token = it
+        model.updateMail(model.mail.copy(token = it))
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton({ model.sendTestMail() }, enabled = token.isNotBlank() && valid.isNotEmpty()) { Text("发一封测试邮件", color = ink.ochre) }
+        Text(model.mailStatus, style = body(12.sp, ink.ink3))
+    }
+    Text("到「提醒时间 + 兜底时间」时，今日总结或明日目标仍然空着、或者今天还没打开日迹，就由腾讯云上的服务发一封邮件，一天最多一封。" +
+        "只上传今天的几个数字（总结写没写、目标几条、完成几件），不上传笔记内容。在 Mac 上改过的收件人会自动同步过来。", style = body(13.sp, ink.ink3))
+}
+
+@Composable
+private fun LabeledField(label: String, value: String, singleLine: Boolean, secret: Boolean = false, onChange: (String) -> Unit) {
+    val ink = LocalInk.current
+    Column {
+        Text(label, style = body(13.sp, ink.ink2))
+        BasicTextField(
+            value, onChange, singleLine = singleLine, textStyle = body(15.sp, ink.ink), cursorBrush = SolidColor(ink.ochre),
+            visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            modifier = Modifier.padding(top = 6.dp).fillMaxWidth().background(ink.paper2, RoundedCornerShape(8.dp)).padding(12.dp),
+        )
+    }
+}
+
 @Composable
 fun TimelineScreen(model: RijiViewModel) {
     val ink = LocalInk.current
@@ -539,7 +596,7 @@ fun ProgressScreen(model: RijiViewModel) {
 @Composable
 fun MeScreen(model: RijiViewModel) {
     val ink = LocalInk.current
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text("ƒ ", style = serif(32.sp, ink.ochre))
             Text("日迹", style = serif(32.sp, ink.ink))
@@ -566,6 +623,7 @@ fun MeScreen(model: RijiViewModel) {
         }
         Text("都写好了就不提醒；只差一样，就只提那一样。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。" +
             "荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则提醒可能被系统拦下。", style = body(13.sp, ink.ink3))
+        MailSettings(model)
         Eyebrow("这台设备")
         Text("已记录 ${model.days().count { model.stats(it.date).hasContent }} 天 · 数据只在本机", style = mono(12.sp, ink.ink3))
     }

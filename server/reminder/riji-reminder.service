@@ -1,0 +1,32 @@
+[Unit]
+Description=Riji evening reminder (email fallback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/bin/python3 /opt/riji-reminder/reminder.py
+EnvironmentFile=/etc/riji-reminder/env
+Environment=RIJI_REMINDER_STATE=/var/lib/riji-reminder/state.json
+Environment=RIJI_REMINDER_HOST=127.0.0.1
+Environment=RIJI_REMINDER_PORT=8791
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=riji-reminder
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
