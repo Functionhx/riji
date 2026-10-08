@@ -14,4 +14,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "riji"
-include(":core")
+include(":core", ":app")
