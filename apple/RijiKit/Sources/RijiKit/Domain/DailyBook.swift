@@ -110,17 +110,79 @@ public final class DailyBook: @unchecked Sendable {
         self.clock = clock
     }
 
+    // ---------------------------------------------------------------- 缓存
+    //
+    // 解析后的记录按 store.revision 缓存：任何写入后失效，下次读取时整体重建一次（O(记录数)）。
+    // 不缓存的话，每次读取都要解析全部 JSON，几百条记录就会慢到秒级。
+
+    private let cacheLock = NSLock()
+    private var cachedRevision = -1
+    private var cachedDays: [Day] = []
+    private var cachedDayByDate: [String: Day] = [:]
+    private var cachedBlocksByNote: [String: [Block]] = [:]
+    private var cachedBlockByID: [String: Block] = [:]
+    private var cachedProgresses: [ProgressItem] = []
+
+    private func withCache<T>(_ read: () -> T) -> T {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if cachedRevision != store.revision {
+            cachedDays = store.values(RecordType.day).compactMap(Day.init(json:)).sorted { $0.date > $1.date }
+            cachedDayByDate = Dictionary(cachedDays.map { ($0.date, $0) }, uniquingKeysWith: { a, _ in a })
+            let blocks = store.values(RecordType.block).compactMap(Block.init(json:))
+            cachedBlockByID = Dictionary(blocks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            cachedBlocksByNote = Dictionary(grouping: blocks, by: \.noteID)
+            cachedProgresses = store.values(RecordType.progress).compactMap(ProgressItem.init(json:))
+            cachedRevision = store.revision
+        }
+        return read()
+    }
+
+    /// 本类自己的写入：缓存是新的，就把这批变更增量合进去，不必整体重建。
+    @discardableResult
+    private func commit(_ edits: [(type: String, id: String, value: JSONValue?)]) throws -> [Change] {
+        cacheLock.lock()
+        let wasFresh = cachedRevision == store.revision
+        cacheLock.unlock()
+        let changes = try store.write(edits)
+        guard wasFresh else { return changes }
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        var daysChanged = false
+        for change in changes {
+            switch change.type {
+            case RecordType.day:
+                cachedDayByDate[change.id] = change.deleted ? nil : change.value.flatMap(Day.init(json:))
+                daysChanged = true
+            case RecordType.block:
+                if let old = cachedBlockByID[change.id] {
+                    cachedBlocksByNote[old.noteID]?.removeAll { $0.id == change.id }
+                }
+                if !change.deleted, let block = change.value.flatMap(Block.init(json:)) {
+                    cachedBlockByID[change.id] = block
+                    cachedBlocksByNote[block.noteID, default: []].append(block)
+                } else {
+                    cachedBlockByID[change.id] = nil
+                }
+            case RecordType.progress:
+                cachedProgresses.removeAll { $0.id == change.id }
+                if !change.deleted, let progress = change.value.flatMap(ProgressItem.init(json:)) { cachedProgresses.append(progress) }
+            default:
+                break
+            }
+        }
+        if daysChanged { cachedDays = cachedDayByDate.values.sorted { $0.date > $1.date } }
+        cachedRevision = store.revision
+        return changes
+    }
+
     // ---------------------------------------------------------------- 读取
 
-    public var days: [Day] {
-        store.values(RecordType.day).compactMap(Day.init(json:)).sorted { $0.date > $1.date }
-    }
+    public var days: [Day] { withCache { cachedDays } }
 
-    public func day(_ date: String) -> Day? { store.value(RecordType.day, date).flatMap(Day.init(json:)) }
+    public func day(_ date: String) -> Day? { withCache { cachedDayByDate[date] } }
 
-    public func blocks(note noteID: String) -> [Block] {
-        store.values(RecordType.block).compactMap(Block.init(json:)).filter { $0.noteID == noteID }
-    }
+    public func blocks(note noteID: String) -> [Block] { withCache { cachedBlocksByNote[noteID] ?? [] } }
+
+    public func block(_ id: String) -> Block? { withCache { cachedBlockByID[id] } }
 
     public func section(_ role: Block.SectionRole, of day: Day) -> Block? {
         blocks(note: day.noteID).first { $0.kind == .section && $0.role == role }
@@ -136,11 +198,11 @@ public final class DailyBook: @unchecked Sendable {
     }
 
     public var progresses: [ProgressItem] {
-        store.values(RecordType.progress).compactMap(ProgressItem.init(json:)).filter { !$0.archived }
+        withCache { cachedProgresses }.filter { !$0.archived }
             .sorted { ($0.updatedDay ?? "", $0.name) > ($1.updatedDay ?? "", $1.name) }
     }
 
-    public func progress(_ id: String) -> ProgressItem? { store.value(RecordType.progress, id).flatMap(ProgressItem.init(json:)) }
+    public func progress(_ id: String) -> ProgressItem? { withCache { cachedProgresses.first { $0.id == id } } }
 
     public func stats(on date: String) -> DayStats {
         let written = items(.todo, on: date)
@@ -199,7 +261,7 @@ public final class DailyBook: @unchecked Sendable {
                                 attrs: ["role": .string(role.rawValue), "title": .string(title)], createdAt: now)
             edits.append((RecordType.block, section.id, section.json))
         }
-        try store.write(edits)
+        try commit(edits)
         try carryOver(into: day, now: now)
         return day
     }
@@ -229,7 +291,7 @@ public final class DailyBook: @unchecked Sendable {
             edits.append((RecordType.block, copy.id, copy.json))
             edits.append((RecordType.block, updated.id, updated.json))
         }
-        try store.write(edits)
+        try commit(edits)
     }
 
     // ---------------------------------------------------------------- 编辑
@@ -258,12 +320,12 @@ public final class DailyBook: @unchecked Sendable {
         let block = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: section.id, order: order,
                           kind: kind, attrs: attrs, text: RichText(text), createdAt: now)
         edits.append((RecordType.block, block.id, block.json))
-        try store.write(edits)
+        try commit(edits)
         return block
     }
 
     public func setText(_ text: String, of blockID: String) throws {
-        guard var block = store.value(RecordType.block, blockID).flatMap(Block.init(json:)), block.text.plain != text else { return }
+        guard var block = block(blockID), block.text.plain != text else { return }
         block.text = RichText(text)
         var edits: [(type: String, id: String, value: JSONValue?)] = []
         if block.kind == .check {
@@ -277,11 +339,11 @@ public final class DailyBook: @unchecked Sendable {
             }
         }
         edits.append((RecordType.block, block.id, block.json))
-        try store.write(edits)
+        try commit(edits)
     }
 
     public func setChecked(_ checked: Bool, of blockID: String) throws {
-        guard var block = store.value(RecordType.block, blockID).flatMap(Block.init(json:)), block.checked != checked else { return }
+        guard var block = block(blockID), block.checked != checked else { return }
         block.attrs["checked"] = .bool(checked)
         var edits: [(type: String, id: String, value: JSONValue?)] = [(RecordType.block, block.id, block.json)]
         // 勾选带进度的任务：进度推进到任务里写的数（只进不退）。
@@ -291,31 +353,31 @@ public final class DailyBook: @unchecked Sendable {
             progress.updatedDay = dayDate(of: block)
             edits.append((RecordType.progress, progress.id, progress.json))
         }
-        try store.write(edits)
+        try commit(edits)
     }
 
     public func setAttr(_ key: String, _ value: JSONValue?, of blockID: String) throws {
-        guard var block = store.value(RecordType.block, blockID).flatMap(Block.init(json:)) else { return }
+        guard var block = block(blockID) else { return }
         block.attrs[key] = value
-        try store.write([(RecordType.block, block.id, block.json)])
+        try commit([(RecordType.block, block.id, block.json)])
     }
 
     public func delete(_ blockID: String) throws {
-        guard let block = store.value(RecordType.block, blockID).flatMap(Block.init(json:)) else { return }
+        guard let block = block(blockID) else { return }
         var edits: [(type: String, id: String, value: JSONValue?)] = [(RecordType.block, blockID, nil)]
         // 删掉一个被带过来的任务：原来那天的记录恢复成「未延续」，免得它悬空。
-        if let from = block.carryFrom, var original = store.value(RecordType.block, from).flatMap(Block.init(json:)),
+        if let from = block.carryFrom, var original = self.block(from),
            original.carriedTo == blockID {
             original.attrs["carried_to"] = nil
             edits.append((RecordType.block, original.id, original.json))
         }
-        try store.write(edits)
+        try commit(edits)
     }
 
     /// Spark → 今天的 TODO。便利贴保留，标上「已升级」。
     @discardableResult
     public func promote(spark sparkID: String, on date: String, now: Date = Date()) throws -> Block? {
-        guard let spark = store.value(RecordType.block, sparkID).flatMap(Block.init(json:)), spark.kind == .spark else { return nil }
+        guard let spark = block(sparkID), spark.kind == .spark else { return nil }
         let task = try add(.check, text: spark.text.plain, to: .todo, on: date, attrs: ["from_spark": .string(spark.id)], now: now)
         if let task { try setAttr("promoted_to", .string(task.id), of: spark.id) }
         return task
@@ -338,11 +400,11 @@ public final class DailyBook: @unchecked Sendable {
     public func setSummary(_ summary: String, on date: String) throws {
         guard var day = day(date) else { return }
         day.summary = summary
-        try store.write([(RecordType.day, date, day.json)])
+        try commit([(RecordType.day, date, day.json)])
     }
 
     public func updateProgress(_ progress: ProgressItem) throws {
-        try store.write([(RecordType.progress, progress.id, progress.json)])
+        try commit([(RecordType.progress, progress.id, progress.json)])
     }
 
     // ---------------------------------------------------------------- 内部

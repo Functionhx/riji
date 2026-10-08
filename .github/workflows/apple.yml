@@ -1,0 +1,32 @@
+name: apple
+on:
+  push:
+    paths: ["apple/**", "spec/test-vectors/**", ".github/workflows/apple.yml"]
+  pull_request:
+    paths: ["apple/**", "spec/test-vectors/**"]
+permissions:
+  contents: read
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: RijiKit tests (spec vectors, daily rules, performance)
+        working-directory: apple/RijiKit
+        run: swift test
+      - name: Generate the Xcode project
+        working-directory: apple/Riji
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build macOS
+        working-directory: apple/Riji
+        run: xcodebuild -project Riji.xcodeproj -scheme RijiMac -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Build iOS / iPadOS (simulator)
+        working-directory: apple/Riji
+        run: xcodebuild -project Riji.xcodeproj -scheme RijiIOS -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build

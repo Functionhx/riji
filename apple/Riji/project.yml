@@ -1,0 +1,63 @@
+# 日迹的苹果端工程（XcodeGen）。生成：cd apple/Riji && xcodegen generate
+# 代码都在 ../RijiKit（RijiKit 内核 + RijiUI 界面）；这里只有应用外壳。
+name: Riji
+options:
+  bundleIdPrefix: com.functionhx
+  deploymentTarget:
+    macOS: "26.0"
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  RijiKit:
+    path: ../RijiKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    PRODUCT_MODULE_NAME: Riji
+    INFOPLIST_KEY_CFBundleDisplayName: 日迹
+    INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+    INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 樊宇琛"
+targets:
+  RijiMac:
+    type: application
+    platform: macOS
+    sources:
+      - App/Shared
+      - App/macOS
+    dependencies:
+      - package: RijiKit
+        product: RijiKit
+      - package: RijiKit
+        product: RijiUI
+    settings:
+      base:
+        PRODUCT_NAME: 日迹
+        PRODUCT_BUNDLE_IDENTIFIER: com.functionhx.riji
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: App/macOS/Riji.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  RijiIOS:
+    type: application
+    platform: iOS
+    sources:
+      - App/Shared
+      - App/iOS
+    dependencies:
+      - package: RijiKit
+        product: RijiKit
+      - package: RijiKit
+        product: RijiUI
+    settings:
+      base:
+        PRODUCT_NAME: 日迹
+        PRODUCT_BUNDLE_IDENTIFIER: com.functionhx.riji
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

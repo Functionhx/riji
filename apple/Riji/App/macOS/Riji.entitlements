@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 沙盒：数据只在应用容器里 -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- 为下一阶段的一键同步预留：只出站 -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

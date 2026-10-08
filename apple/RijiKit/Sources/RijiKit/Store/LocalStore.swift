@@ -53,6 +53,10 @@ public enum StoreError: Error, Equatable {
 /// 合并后的全部记录，加上写入接口。界面通过 `RijiRepository`（RijiUI）观察它。
 public final class RecordStore: @unchecked Sendable {
     public private(set) var state: [String: RecordState] = [:]
+    /// 按类型的索引：读取某一类记录不用扫描全部。
+    private var byType: [String: [String: RecordState]] = [:]
+    /// 每次写入或合并加一；上层用它判断缓存是否过期。
+    public private(set) var revision = 0
     public let clock: HLCClock
     private let log: ChangeLog?
     private let lock = NSLock()
@@ -68,6 +72,10 @@ public final class RecordStore: @unchecked Sendable {
             latest = changes.map(\.hlc).max()
         }
         self.state = state
+        for (key, record) in state {
+            guard let colon = key.firstIndex(of: ":") else { continue }
+            byType[String(key[..<colon]), default: [:]][String(key[key.index(after: colon)...])] = record
+        }
         self.clock = HLCClock(device: device, last: latest, wall: wall)
     }
 
@@ -79,8 +87,14 @@ public final class RecordStore: @unchecked Sendable {
 
     public func values(_ type: String) -> [JSONValue] {
         lock.lock(); defer { lock.unlock() }
-        let prefix = "\(type):"
-        return state.compactMap { key, record in key.hasPrefix(prefix) && !record.deleted ? record.value : nil }
+        return byType[type]?.values.compactMap { $0.deleted ? nil : $0.value } ?? []
+    }
+
+    private func index(_ changes: [Change]) {
+        for change in changes {
+            if let record = state[change.key] { byType[change.type, default: [:]][change.id] = record }
+        }
+        revision += 1
     }
 
     /// 一次写入多条（一个用户动作 = 一批），全部带上递增的 HLC。
@@ -92,6 +106,7 @@ public final class RecordStore: @unchecked Sendable {
         try log?.append(changes)
         lock.lock()
         Merge.apply(changes, to: &state)
+        index(changes)
         lock.unlock()
         return changes
     }
@@ -100,6 +115,7 @@ public final class RecordStore: @unchecked Sendable {
     public func absorb(_ changes: [Change]) {
         lock.lock()
         Merge.apply(changes, to: &state)
+        index(changes)
         lock.unlock()
         if let newest = changes.map(\.hlc).max() { clock.observe(newest) }
     }
