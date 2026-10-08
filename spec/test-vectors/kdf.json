@@ -1,0 +1,35 @@
+{
+  "description": "K_riji = HKDF-SHA256(R, riji_salt, \"functionhx:riji:v1:epoch=<n>\")；K_seg = HKDF-SHA256(K_riji, 32 个零字节, \"functionhx:riji:segment:v1|<device>|<seq>\")。全部 32 字节，十六进制。",
+  "root": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "riji_salt": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+  "riji_keys": [
+    {
+      "epoch": 1,
+      "key": "26b363796c5110f9dc931a20e5b26f5a65c78a5de7985547ab8dd777a8c513f4"
+    },
+    {
+      "epoch": 2,
+      "key": "52b47527dee08bae29c290aab57aab0135fc33a26d586d335fae747a760e69c6"
+    }
+  ],
+  "segment_keys": [
+    {
+      "epoch": 1,
+      "device": "mac-1",
+      "seq": 1,
+      "key": "141a50763252e737e399e319872075a01e3ef2862b3292832615b9acf0425485"
+    },
+    {
+      "epoch": 1,
+      "device": "mac-1",
+      "seq": 2,
+      "key": "1aeb8d7dd1e4edd87cfa868530ea726347ac67cba9848416039d24e4d225ceba"
+    },
+    {
+      "epoch": 1,
+      "device": "phone-1",
+      "seq": 1,
+      "key": "95c08ca1440fece75021794c91790dc7ec200418dfa248f9d275b3527d500d99"
+    }
+  ]
+}

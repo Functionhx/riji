@@ -1,0 +1,380 @@
+{
+  "description": "合并：逐设备验链（序号从 1 连续、prev 吻合，重复段忽略），只合并可接受的最长前缀；同一 (type,id) 取 HLC 最大者，HLC 相同不可能（设备 id 不同即不同）。状态键为 \"<type>:<id>\"，值为 {hlc, value} 或 {hlc, deleted: true}；摘要 = 规范 JSON 的 SHA-256。segments 里的名字对应 segments.json。",
+  "forged_prev_segment": {
+    "v": 1,
+    "device": "phone-1",
+    "seq": 2,
+    "prev": "0000000000000000000000000000000000000000000000000000000000000001",
+    "epoch": 1,
+    "hlc_max": "1759889120000.0000.phone-1",
+    "ct": "AAAAAAAAAAAAAAAErtUxBwDnXCKDhoGOyxl-zdzGZ22ns6OtAHSy5t9TubpGXZUeh0gHLXjDUWLiTxu8hrANFe1i2wHL2pEuavLQ3drxbYli-Cda9LnyzwP7JkYPpy350YjYT7J0bEwaINtI4UeMJ-9bg0v_cRQmVdzCUcnBgONikDdGYk_7ibk1JqgtqhUoDwpJtfDDpd_MrWa9agDwRivjFM_Zo7-QfrZ_RnFA1kdPHe9kZ6qNwLOHo01s5WKezn3M4dlC1LBGWRE0dYBEmf81q4I8t9uTFKLYiBRH7xVFPzk7Lg_YpdxVGDJwxF25_Fh_2S_v"
+  },
+  "scenarios": [
+    {
+      "name": "全部按序到达",
+      "segments": [
+        "mac-1#1",
+        "mac-1#2",
+        "mac-1#3",
+        "phone-1#1",
+        "phone-1#2"
+      ],
+      "expected_vector": {
+        "mac-1": 3,
+        "phone-1": 2
+      },
+      "expected_problems": {},
+      "expected_state": {
+        "block:b-circuit": {
+          "hlc": "1759889090000.0000.phone-1",
+          "deleted": true
+        },
+        "block:b-english": {
+          "hlc": "1759889060000.0000.mac-1",
+          "value": {
+            "attrs": {
+              "checked": true,
+              "indent": 0
+            },
+            "id": "b-english",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "英语单词"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "block:b-tie": {
+          "hlc": "1759889120000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-tie",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "手机写的"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "spark:s-wechat": {
+          "hlc": "1759889090000.0001.phone-1",
+          "value": {
+            "color": "yellow",
+            "id": "s-wechat",
+            "note_id": "n-1008",
+            "text": [
+              {
+                "text": "微信文件传输助手分析历史"
+              }
+            ]
+          }
+        }
+      },
+      "expected_state_digest": "3922f6f26c3c0652e44c0abd79a2edd8907e8191732e85a60d1c15932ac79327"
+    },
+    {
+      "name": "乱序且来自两个副本、含重复段",
+      "segments": [
+        "phone-1#2",
+        "mac-1#3",
+        "mac-1#1",
+        "phone-1#1",
+        "mac-1#2",
+        "mac-1#1",
+        "phone-1#2"
+      ],
+      "expected_vector": {
+        "mac-1": 3,
+        "phone-1": 2
+      },
+      "expected_problems": {},
+      "expected_state": {
+        "block:b-circuit": {
+          "hlc": "1759889090000.0000.phone-1",
+          "deleted": true
+        },
+        "block:b-english": {
+          "hlc": "1759889060000.0000.mac-1",
+          "value": {
+            "attrs": {
+              "checked": true,
+              "indent": 0
+            },
+            "id": "b-english",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "英语单词"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "block:b-tie": {
+          "hlc": "1759889120000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-tie",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "手机写的"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "spark:s-wechat": {
+          "hlc": "1759889090000.0001.phone-1",
+          "value": {
+            "color": "yellow",
+            "id": "s-wechat",
+            "note_id": "n-1008",
+            "text": [
+              {
+                "text": "微信文件传输助手分析历史"
+              }
+            ]
+          }
+        }
+      },
+      "expected_state_digest": "3922f6f26c3c0652e44c0abd79a2edd8907e8191732e85a60d1c15932ac79327"
+    },
+    {
+      "name": "mac-1 缺第 2 段：只接受第 1 段，报告 gap",
+      "segments": [
+        "mac-1#1",
+        "mac-1#3",
+        "phone-1#1",
+        "phone-1#2"
+      ],
+      "expected_vector": {
+        "mac-1": 1,
+        "phone-1": 2
+      },
+      "expected_problems": {
+        "mac-1": [
+          {
+            "code": "gap",
+            "missing": 2
+          }
+        ]
+      },
+      "expected_state": {
+        "block:b-circuit": {
+          "hlc": "1759889090000.0000.phone-1",
+          "deleted": true
+        },
+        "block:b-english": {
+          "hlc": "1759889030000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-english",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "英语单词 50 个"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "block:b-tie": {
+          "hlc": "1759889120000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-tie",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "手机写的"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "spark:s-wechat": {
+          "hlc": "1759889090000.0001.phone-1",
+          "value": {
+            "color": "yellow",
+            "id": "s-wechat",
+            "note_id": "n-1008",
+            "text": [
+              {
+                "text": "微信文件传输助手分析历史"
+              }
+            ]
+          }
+        }
+      },
+      "expected_state_digest": "a64b96e846999f3e971e949b1b597fc11294c875627fa2d7d13e99553e1409d8"
+    },
+    {
+      "name": "phone-1 第 2 段的 prev 被改：报告 broken_chain",
+      "segments": [
+        "mac-1#1",
+        "mac-1#2",
+        "mac-1#3",
+        "phone-1#1",
+        "phone-1#2(forged-prev)"
+      ],
+      "expected_vector": {
+        "mac-1": 3,
+        "phone-1": 1
+      },
+      "expected_problems": {
+        "phone-1": [
+          {
+            "code": "broken_chain",
+            "seq": 2
+          }
+        ]
+      },
+      "expected_state": {
+        "block:b-circuit": {
+          "hlc": "1759889090000.0000.phone-1",
+          "deleted": true
+        },
+        "block:b-english": {
+          "hlc": "1759889060000.0000.mac-1",
+          "value": {
+            "attrs": {
+              "checked": true,
+              "indent": 0
+            },
+            "id": "b-english",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "英语单词"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "block:b-tie": {
+          "hlc": "1759889120000.0000.mac-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-tie",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "Mac 写的"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "spark:s-wechat": {
+          "hlc": "1759889090000.0001.phone-1",
+          "value": {
+            "color": "yellow",
+            "id": "s-wechat",
+            "note_id": "n-1008",
+            "text": [
+              {
+                "text": "微信文件传输助手分析历史"
+              }
+            ]
+          }
+        }
+      },
+      "expected_state_digest": "2c2218cfc91647408eb7b4e3f7130cba3bd65a589b7d43c4c96ce3f6dfcef978"
+    },
+    {
+      "name": "只有手机的段",
+      "segments": [
+        "phone-1#1",
+        "phone-1#2"
+      ],
+      "expected_vector": {
+        "phone-1": 2
+      },
+      "expected_problems": {},
+      "expected_state": {
+        "block:b-circuit": {
+          "hlc": "1759889090000.0000.phone-1",
+          "deleted": true
+        },
+        "block:b-english": {
+          "hlc": "1759889030000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-english",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "英语单词 50 个"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "block:b-tie": {
+          "hlc": "1759889120000.0000.phone-1",
+          "value": {
+            "attrs": {
+              "checked": false,
+              "indent": 0
+            },
+            "id": "b-tie",
+            "note_id": "n-1008",
+            "order": "a0",
+            "text": [
+              {
+                "text": "手机写的"
+              }
+            ],
+            "type": "check"
+          }
+        },
+        "spark:s-wechat": {
+          "hlc": "1759889090000.0001.phone-1",
+          "value": {
+            "color": "yellow",
+            "id": "s-wechat",
+            "note_id": "n-1008",
+            "text": [
+              {
+                "text": "微信文件传输助手分析历史"
+              }
+            ]
+          }
+        }
+      },
+      "expected_state_digest": "a64b96e846999f3e971e949b1b597fc11294c875627fa2d7d13e99553e1409d8"
+    }
+  ]
+}

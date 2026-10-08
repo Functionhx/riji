@@ -250,7 +250,8 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 ```text
 网站保险库根密钥 R（已有：浏览器生成，口令 + 通行密钥包裹，服务器不可解）
   └─ 日迹密钥 K_riji = HKDF-SHA256(R, salt = keyring.riji_salt, info = "functionhx:riji:v1:epoch=<n>")
-       └─ 每条记录的数据密钥 DEK（随机 32 字节，AES-256-GCM），用 K_riji 包裹
+       └─ 段密钥 K_seg = HKDF-SHA256(K_riji, 32 个零字节, "functionhx:riji:segment:v1|<设备>|<序号>")
+          每段只加密一次，确定性派生避免了 AES-GCM 随机数重复的风险（规格与向量见 spec/）
 ```
 
 - 设备只持有 `K_riji`，**拿不到 R**：日迹设备丢失不会危及网站 Spark。
@@ -319,14 +320,29 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 3. 推送：把本机新写的段（`A#42…`）`PUT` 到副本；副本只接受「接在已知序号后面且 prev 吻合」的段。
 4. 同一轮里客户端可以**同时**对腾讯云与 GitHub 做 1–3；任一成功即算同步完成，另一个下次补。
 
+**谁连谁**（站长定，2026-10-08）
+
+```text
+荣耀 Magic 8 Pro ──→ 腾讯云 ──(服务端转存)──→ GitHub 私有仓库
+                       ↑                         ↑
+MacBook（常开 TUN）────┴─────────────────────────┘   两边都直连；同一 Wi-Fi 时也和手机直传
+```
+
+- **手机只连腾讯云**：国内网络快、不依赖谷歌服务；手机上不需要任何 GitHub 凭证。
+- **腾讯云收到段后由服务端转存到 GitHub**：保险库服务本来就持有写私有仓库的权限（网站 Spark 正是这样保存密文）。
+  收到推送后立刻入本地 SQLite 并回复，随后在 30 秒内把新段批量提交到私有仓库；失败就留在队列里，下一次推送或定时任务重试。
+  腾讯云访问 GitHub 不稳时，经服务器上的代理出站（只代理 GitHub 流量，见运维说明）。
+- **MacBook 两边都连**：同时对腾讯云和 GitHub 拉取 / 推送；腾讯云宕机时，Mac 仍能经 GitHub 同步，
+  恢复后腾讯云从仓库补回 Mac 直写的段（反熵）。
+
 **两个副本**
 
 | 副本 | 存法 | 访问 |
 | --- | --- | --- |
 | 腾讯云（主力，国内快） | `spark-vault` 服务旁的 SQLite：`segments(device, seq, prev, size, ct, received_at)` | 原生会话（已有的 Magic Bridge PKCE 登录） |
-| GitHub 私有仓库 `functionhx-spark-private` | `riji/log/<device>/<seq 补零到 8 位>.json`，一段一个文件 | 单独的 GitHub App「Riji Sync」，**只装在私有仓库**、只有 Contents 读写；设备用 GitHub 设备流程登录，各自持有可过期的令牌（存 Keychain / Keystore），App 里不放任何密钥 |
+| GitHub 私有仓库 `functionhx-spark-private` | `riji/log/<device>/<seq 补零到 8 位>.json`，一段一个文件 | 腾讯云服务端转存（主路径）；MacBook 直连用单独的 GitHub App「Riji Sync」——**只装在私有仓库**、只有 Contents 读写，Mac 用 GitHub 设备流程登录、令牌存 Keychain，App 里不放任何密钥。手机不直连 GitHub |
 
-- 腾讯云每 5 分钟把新段批量提交到私有仓库（一次提交多段），并定期从仓库拉回设备直写的段，两边收敛。
+- 腾讯云收到新段后 30 秒内批量提交到私有仓库（一次提交多段），并每 5 分钟从仓库拉回 Mac 直写的段，两边收敛。
 - 私有仓库的提交数随同步批次增长，每天大约十几到几十个；Git 历史本身就是一份可审计的变更记录。
 
 **快照与压缩**

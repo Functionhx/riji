@@ -1,0 +1,106 @@
+{
+  "description": "日志段：AES-256-GCM(K_seg, nonce, 明文 = 规范 JSON {changes: 按 (type,id,hlc) 排序})；ct = base64url(nonce ‖ 密文 ‖ 16 字节标签)；AAD = \"riji-segment|v1|<device>|<seq>|<prev>|<epoch>\"；prev = 上一段 ct 字节的 SHA-256，首段为 64 个 0。",
+  "riji_key_epoch_1": "26b363796c5110f9dc931a20e5b26f5a65c78a5de7985547ab8dd777a8c513f4",
+  "segments": {
+    "mac-1#1": {
+      "v": 1,
+      "device": "mac-1",
+      "seq": 1,
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "epoch": 1,
+      "hlc_max": "1759889000000.0001.mac-1",
+      "ct": "AAAAAAAAAAAAAAABXFGm_ivk-PyQWRwbeRTla-HlV3Q2v6g2j6pONajmWKse1FlRyN6Pz8Flac7XJZy9PSB-W1l7ylAsx2TkhzJZNT0dGi6EGZ2eJI8zbkl3h1OheM91KVoOIs69Eu8g67ORVUxR8A1OkGc2DmSCbCtVgakn8k5aIosYij-9LJt1hTaOK_GKym1mSs0yYZRx0LXFsMs8LNN2gCOzvf0lm0VAx6UY2dj2O0bEqFAAhmvSTjeSgT6l15WCdTLx17UEPdx4eP85VaocEFoSYiYd4I9sSFFEr4ugvN1Nd7RN3u0-e0X9fdJHIq8R_JggfMzwzuSuDhcmcpQn5ziFwnrZgepRNq6UDhlfvdHjAGZ1x2LJL9LCEvqoWDX0R9Pw8AuVG4b5sdfv7ptdiS_pwabL1Hb9liSJLVi8VeNeGmPLxHjayydiGl8IdCIlyBAfqEkebis7mmgVbThkjx6CGFQTHuBAd9CYaQQxAJ5sCEQWlxZLIjccLVZ98iOMs75-RKvqb23jKtrIB8OuvS1G7iRCS3G5RYinP5RqpCYWMvCuIcL4w0xBFAG7Uam6iw9RdSv7lgfbsNCEXcKUarA7eVkefM96GWD2WgI"
+    },
+    "mac-1#2": {
+      "v": 1,
+      "device": "mac-1",
+      "seq": 2,
+      "prev": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+      "epoch": 1,
+      "hlc_max": "1759889060000.0000.mac-1",
+      "ct": "AAAAAAAAAAAAAAACRCui3kUJ8MqASIHuGltpALhA7n-A-bQAFbUjDlZuB106ZpBNX07yKZzgcurMr0Hzr1sYyppZM8TzJymgxC3BVOnROxaOALlh18gatIu62q7xLlmjWFjhwTaIWMKCZl_FdgIot56SSqfnK7tDn4AMNJyntcqZPnfFnRTAUocFGiU3fVYBS0xTsvu-XSdYybpGbLVCvZHLVtNHb0W0CBULOIoZo_JHWMkcEQsKefl_ISJjrT5oDQIl6tPoEdBGa_7PsL8x-dHpKb-C9CQNxTuVeNKJIgXnZ3igdu4vA9jfImyf55R22af2I2U6L7AjUW4"
+    },
+    "mac-1#3": {
+      "v": 1,
+      "device": "mac-1",
+      "seq": 3,
+      "prev": "ead50b812b7082322329cc180413913b0fcffd04e22fe6088bceec78a2df1891",
+      "epoch": 1,
+      "hlc_max": "1759889120000.0000.mac-1",
+      "ct": "AAAAAAAAAAAAAAAFpFopauaglW4XlHaqmRhBxy_hUqtz8ABZ8rREs1-tPZ2NTAkYzWGM0lw2f3BBU-s-Wgm6gDkQL_IkZ3Ip3M7zXdpBMqjbR7Ptzp3bpg7E8nH2m9aXjhbPdYG6nrpEyj2q-I_KrX4elVhWTJtYWEy8UYgmirxvE5dJgTDNxop_jcj4ZI1niMKi60OGUqEVf1Pe7mSsjdGH4M_lVh3wU6vx7rjI6OzDbt07Xz8znyHl0PLLQLaSe87D_uFQ7XM3aBSpiP0oul4Ybqti6VUYrZ-AfrzoD9RxN-tm_VpgE6W5Gvf1luWhVAk"
+    },
+    "phone-1#1": {
+      "v": 1,
+      "device": "phone-1",
+      "seq": 1,
+      "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+      "epoch": 1,
+      "hlc_max": "1759889090000.0001.phone-1",
+      "ct": "AAAAAAAAAAAAAAADrt7a0tWozJvjY1qotdrNl5J15ia0-XwaFJDwFZPHrNg-C3QlHrkVqnkoGgF0Fzrdq9DbJm4SiHIJ4_E2aEZL5fWKAeLUEq4T1vQ0sHOzkLDuCTFp1zlaD3mlkBV6wvOSVvkO1QFUMLWVClrNhFL0rveF1Q2MRy_mkIpVcLhukGSGhB9-RwbMVgINzr64UuoENXyQ79WGCbXliF64yJObBVKw66oHE4vwgTlSlkkQ0ZOcR73n4OggNp0reJFBbP1_DUx7LsCU0sL-KR_GLV1awmLZl7dUe2ziPS3U3FY1PaE8gJ98cvNoZRUj2Mt-DPl7xwkxwnpCPR0pu0lgirHySnDjXW5v0u6AwWOoJgWaqqBIfhe3V7esgwAMecxB3eM_sb9dy6lDkP16CHy8_zXqMb1t6KCzpkv8RQ_QXGHBrr__6AZgBIy6c-QOoyVduu4hp0lfoZllqLljPcbg4NxjbfNCdlXcHynrPe2OY3vmi82k2UEXXnltXZAqDOHQ8swoAF8U0ivMdHVLFbi8Khqa1KNuyYcpyTYC4gih2_707qogrr2RR2dkCW4SWawkIz2C9fdOtLJgW53JNzg70S77D6ZVEJwY5xtVVBVcczoikv1BPu7UVvtvun9tcbDtFBirBWzkQ8bALrRnS3kEpOWN3bh0rbidykiRSdcz3UXbc-8lGCbooQX9uQ"
+    },
+    "phone-1#2": {
+      "v": 1,
+      "device": "phone-1",
+      "seq": 2,
+      "prev": "ea55827c9c463134a436fe4696a4223b67cb4b56af4131aeb993ec2bb603e555",
+      "epoch": 1,
+      "hlc_max": "1759889120000.0000.phone-1",
+      "ct": "AAAAAAAAAAAAAAAErtUxBwDnXCKDhoGOyxl-zdzGZ22ns6OtAHSy5t9TubpGXZUeh0gHLXjDUWLiTxu8hrANFe1i2wHL2pEuavLQ3drxbYli-Cda9LnyzwP7JkYPpy350YjYT7J0bEwaINtI4UeMJ-9bg0v_cRQmVdzCUcnBgONikDdGYk_7ibk1JqgtqhUoDwpJtfDDpd_MrWa9agDwRivjFM_Zo7-QfrZ_RnFA1kdPHe9kZ6qNwLOHo01s5WKezn3M4dlC1LBGWRE0dYBEmf81q4I8t9uTFKLYiBRH7xVFPzk7Lg_YpdxVGDJwxF25_Fh_2S_v"
+    }
+  },
+  "chain_hashes": {
+    "mac-1#1": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+    "mac-1#2": "ead50b812b7082322329cc180413913b0fcffd04e22fe6088bceec78a2df1891",
+    "phone-1#1": "ea55827c9c463134a436fe4696a4223b67cb4b56af4131aeb993ec2bb603e555"
+  },
+  "must_fail_to_open": [
+    {
+      "reason": "ciphertext tampered",
+      "segment": {
+        "v": 1,
+        "device": "mac-1",
+        "seq": 2,
+        "prev": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+        "epoch": 1,
+        "hlc_max": "1759889060000.0000.mac-1",
+        "ct": "AAAAAAAAAAAAAAACRCui3kUJ8MqASIHuGltpALhA7n-A-bQAFbUjDlZuB106ZpBNX07yKZzgcurMr0Hzr1sYyppZM8TzJymgxC3BVOnROxaOALlh18gatIu62q7xLlmjWFjhwTaIWMKCZl_FdgIot56SSqfnK7tDn4AMNJyntcqZPnfFnRTAUocFGiU3fVYBS0xTsvu-XSdYybpGbLVCvZHLVtNHb0W0CBULOIoZo_JHWMkcEQsKefl_ISJjrT5oDQIl6tPoEdBGa_7PsL8x-dHpKb-C9CQNxTuVeNKJIgXnZ3igdu4vA9jfImyf55R22af2I2U6L7AjUW8"
+      }
+    },
+    {
+      "reason": "header seq changed (AAD mismatch)",
+      "segment": {
+        "v": 1,
+        "device": "mac-1",
+        "seq": 3,
+        "prev": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+        "epoch": 1,
+        "hlc_max": "1759889060000.0000.mac-1",
+        "ct": "AAAAAAAAAAAAAAACRCui3kUJ8MqASIHuGltpALhA7n-A-bQAFbUjDlZuB106ZpBNX07yKZzgcurMr0Hzr1sYyppZM8TzJymgxC3BVOnROxaOALlh18gatIu62q7xLlmjWFjhwTaIWMKCZl_FdgIot56SSqfnK7tDn4AMNJyntcqZPnfFnRTAUocFGiU3fVYBS0xTsvu-XSdYybpGbLVCvZHLVtNHb0W0CBULOIoZo_JHWMkcEQsKefl_ISJjrT5oDQIl6tPoEdBGa_7PsL8x-dHpKb-C9CQNxTuVeNKJIgXnZ3igdu4vA9jfImyf55R22af2I2U6L7AjUW4"
+      }
+    },
+    {
+      "reason": "header epoch changed (AAD mismatch)",
+      "segment": {
+        "v": 1,
+        "device": "mac-1",
+        "seq": 2,
+        "prev": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+        "epoch": 2,
+        "hlc_max": "1759889060000.0000.mac-1",
+        "ct": "AAAAAAAAAAAAAAACRCui3kUJ8MqASIHuGltpALhA7n-A-bQAFbUjDlZuB106ZpBNX07yKZzgcurMr0Hzr1sYyppZM8TzJymgxC3BVOnROxaOALlh18gatIu62q7xLlmjWFjhwTaIWMKCZl_FdgIot56SSqfnK7tDn4AMNJyntcqZPnfFnRTAUocFGiU3fVYBS0xTsvu-XSdYybpGbLVCvZHLVtNHb0W0CBULOIoZo_JHWMkcEQsKefl_ISJjrT5oDQIl6tPoEdBGa_7PsL8x-dHpKb-C9CQNxTuVeNKJIgXnZ3igdu4vA9jfImyf55R22af2I2U6L7AjUW4"
+      }
+    },
+    {
+      "reason": "wrong device in header (different key and AAD)",
+      "segment": {
+        "v": 1,
+        "device": "phone-1",
+        "seq": 2,
+        "prev": "9890ac5065704fc1f179b8cbbe97908e7f67b5f0ef4217b28cd26ee48a7aa35a",
+        "epoch": 1,
+        "hlc_max": "1759889060000.0000.mac-1",
+        "ct": "AAAAAAAAAAAAAAACRCui3kUJ8MqASIHuGltpALhA7n-A-bQAFbUjDlZuB106ZpBNX07yKZzgcurMr0Hzr1sYyppZM8TzJymgxC3BVOnROxaOALlh18gatIu62q7xLlmjWFjhwTaIWMKCZl_FdgIot56SSqfnK7tDn4AMNJyntcqZPnfFnRTAUocFGiU3fVYBS0xTsvu-XSdYybpGbLVCvZHLVtNHb0W0CBULOIoZo_JHWMkcEQsKefl_ISJjrT5oDQIl6tPoEdBGa_7PsL8x-dHpKb-C9CQNxTuVeNKJIgXnZ3igdu4vA9jfImyf55R22af2I2U6L7AjUW4"
+      }
+    }
+  ]
+}
