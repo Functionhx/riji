@@ -23,6 +23,8 @@ public final class MailReminder {
     /// 最近一次和服务器打交道的结果（设置窗口里显示）。
     public private(set) var status: String = ""
     public private(set) var serverReady: Bool?
+    /// 设置或连接码每改一次加一：应用据此立即重新上报（不必等到内容变化）。
+    public private(set) var version = 0
 
     private let defaults = UserDefaults.standard
 
@@ -30,12 +32,16 @@ public final class MailReminder {
 
     public var token: String {
         get { Keychain.read() ?? "" }
-        set { Keychain.write(newValue.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        set {
+            Keychain.write(newValue.trimmingCharacters(in: .whitespacesAndNewlines))
+            version += 1
+        }
     }
 
     /// 任何一项提醒设置被用户改动时调用：记下时间，它就成了「最新的一份」。
     public static func touch() {
         UserDefaults.standard.set(Int(Date().timeIntervalSince1970 * 1000), forKey: updatedKey)
+        shared.version += 1
     }
 
     public static func parse(_ text: String) -> (valid: [String], invalid: [String]) {

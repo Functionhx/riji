@@ -24,7 +24,7 @@ struct RijiApp: App {
                     if !AppBootstrap.isDemo { await EveningReminder.requestAuthorization() }
                 }
                 // 内容或提醒设置一变就重排晚间提醒（task(id:) 会取消上一次，相当于防抖）
-                .task(id: ReminderKey(revision: model.revision, enabled: reminderOn, minutes: reminderMinutes)) {
+                .task(id: ReminderKey(revision: model.revision, enabled: reminderOn, minutes: reminderMinutes, mail: MailReminder.shared.version)) {
                     guard !AppBootstrap.isDemo else { return }
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
@@ -95,4 +95,5 @@ private struct ReminderKey: Hashable {
     var revision: Int
     var enabled: Bool
     var minutes: Int
+    var mail: Int
 }
