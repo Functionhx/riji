@@ -349,7 +349,7 @@ Attachment  { id, block_id, mime, bytes, sha256, width?, height?, name }
 **跨平台测试向量**（`spec/test-vectors/`）：同一组段在 Kotlin 与 Swift 两端解密、合并后必须得到
 逐字节相同的状态；含乱序到达、重复段、序号断档、哈希链被篡改、epoch 轮换等用例。
 
-### 8.5 服务端改动（`spark-vault`，在网站仓库里，需手动部署到腾讯云）
+### 8.4 服务端改动（`spark-vault`，在网站仓库里，需手动部署到腾讯云）
 
 | 端点 | 作用 |
 | --- | --- |
