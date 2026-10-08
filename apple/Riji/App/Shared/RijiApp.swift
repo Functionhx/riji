@@ -4,10 +4,14 @@ import SwiftUI
 
 @main
 struct RijiApp: App {
-    @State private var model = AppBootstrap.makeModel()
-    @AppStorage(ReminderSettings.enabledKey) private var reminderOn = ReminderSettings.defaultEnabled
-    @AppStorage(ReminderSettings.minutesKey) private var reminderMinutes = ReminderSettings.defaultMinutes
-    @AppStorage(ReminderSettings.dayStartKey) private var dayStart = ReminderSettings.defaultDayStart
+    @State private var model: RijiModel
+    private let coordinator: ReminderCoordinator?
+
+    init() {
+        let model = AppBootstrap.makeModel()
+        _model = State(initialValue: model)
+        coordinator = AppBootstrap.isDemo ? nil : ReminderCoordinator(model: model)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -23,16 +27,6 @@ struct RijiApp: App {
                     Snapshotter.runIfRequested()
                     #endif
                     if !AppBootstrap.isDemo { await EveningReminder.requestAuthorization() }
-                }
-                // 内容或提醒设置一变就重排晚间提醒（task(id:) 会取消上一次，相当于防抖）
-                .onChange(of: dayStart) { _, minutes in if !AppBootstrap.isDemo { model.setDayStart(minutes) } }
-                .task(id: ReminderKey(revision: model.revision, enabled: reminderOn, minutes: reminderMinutes, mail: MailReminder.shared.version)) {
-                    guard !AppBootstrap.isDemo else { return }
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                    await MailReminder.shared.report(book: model.book, today: model.today,
-                                                     device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")
-                    await EveningReminder.reschedule(book: model.book, today: model.today, now: model.currentDate)
                 }
                 .overlay(alignment: .bottom) {
                     if let error = model.lastError ?? AppBootstrap.openError {
@@ -95,9 +89,60 @@ enum AppBootstrap {
     }
 }
 
-private struct ReminderKey: Hashable {
-    var revision: Int
-    var enabled: Bool
-    var minutes: Int
-    var mail: Int
+/// 晚间提醒与邮件上报的总管：跟窗口无关（窗口关了、应用还在程序坞里时照常工作）。
+/// 内容、提醒设置或连接码一变，一秒后上报今天并重排通知（连续变化只做最后一次）；每分钟检查一次是否跨过了分界线。
+@MainActor
+final class ReminderCoordinator {
+    private let model: RijiModel
+    private var pending: Task<Void, Never>?
+    private var ticker: Task<Void, Never>?
+    private var defaultsObserver: NSObjectProtocol?
+
+    init(model: RijiModel) {
+        self.model = model
+        observe()
+        defaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.settingsChanged() }
+        }
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                self?.model.refreshDay()
+            }
+        }
+        schedule()
+    }
+
+    private func observe() {
+        withObservationTracking {
+            _ = model.revision
+            _ = MailReminder.shared.version
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.schedule()
+                self?.observe()
+            }
+        }
+    }
+
+    private var lastSettings: [Int] = []
+
+    private func settingsChanged() {
+        let settings = [ReminderSettings.enabled ? 1 : 0, ReminderSettings.minutes, ReminderSettings.dayStart]
+        guard settings != lastSettings else { return }
+        lastSettings = settings
+        model.setDayStart(ReminderSettings.dayStart)
+        schedule()
+    }
+
+    private func schedule() {
+        pending?.cancel()
+        pending = Task { [model] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await MailReminder.shared.report(book: model.book, today: model.today,
+                                             device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")
+            await EveningReminder.reschedule(book: model.book, today: model.today, now: model.currentDate)
+        }
+    }
 }

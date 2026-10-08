@@ -1,12 +1,11 @@
 import Foundation
 import Observation
 import RijiKit
-import Security
 
 /// 邮件提醒（兜底）：通知之后仍没写，由腾讯云上的 riji-reminder 发信（见仓库 server/reminder）。
 ///
 /// 设备只上报今天的几个数字和邮件设置，不上报任何笔记内容。设置以最近一次修改为准：服务器返回最新的一份，
-/// 别的设备上改过的话这里照着更新。连接码存在钥匙串里。
+/// 别的设备上改过的话这里照着更新。连接码存在应用沙盒里的一个文件中（见 `tokenURL`）。
 @MainActor
 @Observable
 public final class MailReminder {
@@ -30,10 +29,23 @@ public final class MailReminder {
 
     // ---------------------------------------------------------------- 设置
 
+    /// 连接码不放钥匙串：应用没有开发者签名，每次更新签名都变，钥匙串会反复弹授权框、还会卡住界面。
+    /// 沙盒容器里的文件只有本应用能读（别的应用访问需要用户同意）；连接码泄露的后果也只是能改提醒设置。
+    public static var tokenURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Riji/reminder-token")
+    }
+
     public var token: String {
-        get { Keychain.read() ?? "" }
+        get { ((try? String(contentsOf: Self.tokenURL, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
         set {
-            Keychain.write(newValue.trimmingCharacters(in: .whitespacesAndNewlines))
+            let value = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty {
+                try? FileManager.default.removeItem(at: Self.tokenURL)
+            } else {
+                try? FileManager.default.createDirectory(at: Self.tokenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                FileManager.default.createFile(atPath: Self.tokenURL.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600])
+            }
             version += 1
         }
     }
@@ -144,31 +156,5 @@ public final class MailReminder {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: Date())
-    }
-}
-
-/// 连接码放在钥匙串（只这台设备、只本应用）。
-enum Keychain {
-    private static var query: [String: Any] { [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.functionhx.riji",
-        kSecAttrAccount as String: "reminder-token",
-    ] }
-
-    static func read() -> String? {
-        var item: CFTypeRef?
-        var search = query
-        search[kSecReturnData as String] = true
-        guard SecItemCopyMatching(search as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func write(_ value: String) {
-        SecItemDelete(query as CFDictionary)
-        guard !value.isEmpty else { return }
-        var item = query
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
     }
 }

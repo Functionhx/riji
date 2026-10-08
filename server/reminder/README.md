@@ -20,7 +20,7 @@
 | POST | `/status` | `Authorization: Bearer <连接码>`；`{device, date, evening:{has_summary, plans, done, total, pending}, settings?}` |
 | POST | `/test` | 同上鉴权；立即发一封测试邮件（每天最多 5 封） |
 
-连接码只在设备上（macOS 钥匙串 / Android 应用私有偏好）；服务器只存它的 SHA-256。
+连接码只在设备上（macOS 应用沙盒里的文件 / Android 应用私有偏好）；服务器只存它的 SHA-256。
 
 ## 部署
 
