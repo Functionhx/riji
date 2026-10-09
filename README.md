@@ -20,7 +20,7 @@
 | macOS 应用 | 今天页、今日目标跨天延续、明日目标自动成为次日今日目标、Spark 便利贴、长期进度、随记、今日总结、时间线、热力图、只提醒缺项的晚间提醒（⌘, 设时间）与早上补写；数据在本机 |
 | iOS / iPadOS | 与 macOS 共用代码，能编译；以 macOS 为准，适配以后做 |
 | Android 应用 | 同样的功能（Compose），在 API 35 模拟器上实测；数据在本机 |
-| 邮件提醒（兜底） | 腾讯云 `server/reminder/`：通知之后仍没写才发信，可多个收件邮箱；设备只上报今天的几个数字 |
+| 服务端 | 腾讯云 `server/riji-server/`：邮件提醒（兜底）、加密同步副本、配对中转；按空间隔离多用户，邀请码加入 |
 | 一键同步、网站连接、备忘录导入 | 下一阶段（P2 / P3，见设计文档 §12） |
 
 ## 运行
@@ -48,7 +48,7 @@ cd android && ./gradlew :app:installDebug
 node spec/reference/verify-vectors.mjs        # 规格向量
 cd apple/RijiKit && swift test                # Swift：向量 + 每日规则 + 性能
 cd android && ./gradlew :core:test            # Kotlin：向量 + 每日规则 + 性能
-python3 -m unittest server/reminder/test_reminder.py   # 邮件提醒服务（不发真邮件）
+python3 -m unittest server/riji-server/test_riji_server.py   # 服务端（不发真邮件）
 ```
 
 CI（`.github/workflows/`）在每次推送时跑以上全部，并编译 macOS、iOS 与 Android 调试包。

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import RijiKit
 
-/// 邮件提醒（兜底）：通知之后仍没写，由腾讯云上的 riji-reminder 发信（见仓库 server/reminder）。
+/// 邮件提醒（兜底）：通知之后仍没写，由腾讯云上的 riji-server 发信（见仓库 server/riji-server）。
 ///
 /// 设备只上报今天的几个数字和邮件设置，不上报任何笔记内容。设置以最近一次修改为准：服务器返回最新的一份，
 /// 别的设备上改过的话这里照着更新。连接码存在应用沙盒里的一个文件中（见 `tokenURL`）。

@@ -6,7 +6,7 @@ import java.security.SecureRandom
 import java.time.Instant
 
 // 同步一轮（docs/DESIGN.md §8.3），与 Swift 的 SyncEngine 相同：封装本机新变更 → 推给副本 → 拉回其他设备的新段，
-// 校验序号与哈希链、解密、按 HLC 合并。副本（腾讯云 riji-sync）只存密文段。
+// 校验序号与哈希链、解密、按 HLC 合并。副本（腾讯云 riji-server）只存密文段。
 
 data class SegmentHead(val seq: Int, val hash: String) {
     fun json(): JsonValue = JsonValue.obj("seq" to JsonValue.num(seq), "hash" to JsonValue.str(hash))

@@ -8,7 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 邮件提醒（兜底）：通知之后仍没写，由腾讯云上的 riji-reminder 发信（见仓库 server/reminder）。与 Mac 版 MailReminder 相同：
+ * 邮件提醒（兜底）：通知之后仍没写，由腾讯云上的 riji-server 发信（见仓库 server/riji-server）。与 Mac 版 MailReminder 相同：
  * 只上报今天的几个数字和邮件设置，不上报笔记内容；设置以最近一次修改为准，服务器返回最新的一份，这里照着更新。
  */
 object MailReminder {

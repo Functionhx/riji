@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 // 同步一轮（docs/DESIGN.md §8.3）：把本机新写的变更封装成本设备的段 → 推给副本 → 从副本拉回其他设备的新段，
-// 校验序号与哈希链、解密、按 HLC 合并。副本（腾讯云 riji-sync）只存密文段。
+// 校验序号与哈希链、解密、按 HLC 合并。副本（腾讯云 riji-server）只存密文段。
 
 /// 一台设备在副本上的最新段。
 public struct SegmentHead: Codable, Equatable, Sendable {

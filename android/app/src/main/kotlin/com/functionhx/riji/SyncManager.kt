@@ -15,7 +15,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-/** 腾讯云 riji-sync 的 HTTP 访问（server/sync），阻塞调用，在 IO 线程上用。连接码与邮件提醒共用。 */
+/** 腾讯云 riji-server 同步接口的 HTTP 访问（server/riji-server），阻塞调用，在 IO 线程上用。连接码与邮件提醒共用。 */
 class HttpSyncTransport(private val token: String?) : SyncTransport {
     class Failure(val status: Int, val code: String?) : Exception(
         when {

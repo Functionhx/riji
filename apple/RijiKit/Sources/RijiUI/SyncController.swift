@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import RijiKit
 
-/// 腾讯云 riji-sync 的 HTTP 访问（server/sync）。连接码与邮件提醒共用。
+/// 腾讯云 riji-server 同步接口的 HTTP 访问（server/riji-server）。连接码与邮件提醒共用。
 struct HTTPSyncTransport: SyncTransport {
     static let endpoint = URL(string: "https://fanyuchen.com.cn/riji/sync/")!
     let token: String
