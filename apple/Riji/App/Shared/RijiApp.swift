@@ -92,8 +92,8 @@ enum AppBootstrap {
     }
 }
 
-/// 晚间提醒与邮件上报的总管：跟窗口无关（窗口关了、应用还在程序坞里时照常工作）。
-/// 内容、提醒设置或连接码一变，一秒后上报今天并重排通知（连续变化只做最后一次）；每分钟检查一次是否跨过了分界线。
+/// 同步、晚间通知与邮件上报的总管：跟窗口无关（窗口关了、应用还在程序坞里时照常工作）。
+/// 内容、设置或连接码一变，两秒后同步、上报今天、检查通知（连续变化只做最后一次）；每分钟同步并检查分界线与提醒时间。
 @MainActor
 final class ReminderCoordinator {
     private let model: RijiModel
@@ -114,6 +114,7 @@ final class ReminderCoordinator {
                 try? await Task.sleep(for: .seconds(60))
                 self?.model.refreshDay()
                 await self?.sync?.sync()
+                if let model = self?.model { await EveningReminder.notifyIfDue(book: model.book, today: model.today, now: model.currentDate) }
             }
         }
         schedule()
@@ -151,7 +152,7 @@ final class ReminderCoordinator {
             await sync?.sync()
             await MailReminder.shared.report(book: model.book, today: model.today,
                                              device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")
-            await EveningReminder.reschedule(book: model.book, today: model.today, now: model.currentDate)
+            await EveningReminder.notifyIfDue(book: model.book, today: model.today, now: model.currentDate)
         }
     }
 }

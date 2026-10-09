@@ -40,7 +40,7 @@ cd android && ./gradlew :app:installDebug
 ```
 
 也可以在 GitHub Actions 的 `android` 运行结果里下载 `riji-debug-apk`，直接装到手机上。
-荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则晚间提醒可能被系统拦下。
+晚间通知只在日迹开着时弹，不需要自启动或后台运行；日迹没开着时由服务器按兜底时间发邮件。
 
 ## 测试
 

@@ -86,7 +86,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         selectedDate = today
         perform { book.ensureDay(today) }
         SyncKeyStore.load(application)?.let(::startSync)
-        viewModelScope.launch { while (true) { delay(60_000); syncNow() } }
+        viewModelScope.launch { while (true) { delay(60_000); refreshDay(); syncNow(); checkReminder() } }
     }
 
     private fun startSync(key: com.functionhx.riji.core.SyncKey) {
@@ -232,6 +232,9 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         syncJob?.cancel()
         syncJob = viewModelScope.launch { delay(3_000); syncNow() }
     }
+
+    /** 日迹开着时：到了提醒时间还缺东西就弹一次通知。 */
+    fun checkReminder() = EveningReminder.notifyIfDue(getApplication(), book, today)
 
     /** 内容变了：一秒后上报今天的数字（连续修改只报最后一次）。 */
     fun scheduleReport() {

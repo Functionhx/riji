@@ -682,7 +682,7 @@ fun MeScreen(model: RijiViewModel) {
         val context = androidx.compose.ui.platform.LocalContext.current
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("每晚提醒写今日总结和明日目标", style = body(14.5.sp, ink.ink))
+                Text("到点弹通知（日迹开着时）", style = body(14.5.sp, ink.ink))
                 Text(
                     EveningReminder.label(model.reminderMinutes) + "  更改",
                     style = mono(12.sp, if (model.reminderOn) ink.ochre else ink.ink3),
@@ -694,8 +694,8 @@ fun MeScreen(model: RijiViewModel) {
             }
             Switch(model.reminderOn, { model.setReminder(it, model.reminderMinutes) })
         }
-        Text("都写好了就不提醒；只差一样，就只提那一样。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。" +
-            "荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则提醒可能被系统拦下。", style = body(13.sp, ink.ink3))
+        Text("日迹开着时，到了提醒时间还缺东西就弹一次通知，只提缺的那一样；日迹没开着就交给下面的邮件，" +
+            "不需要自启动或后台运行。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。", style = body(13.sp, ink.ink3))
         MailSettings(model)
         Eyebrow("这台设备")
         Text("已记录 ${model.days().count { model.stats(it.date).hasContent }} 天 · " + if (model.syncEnabled) "与 Mac 加密同步" else "数据只在本机", style = mono(12.sp, ink.ink3))

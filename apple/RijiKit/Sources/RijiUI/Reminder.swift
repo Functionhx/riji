@@ -33,44 +33,36 @@ public enum ReminderSettings {
     public static func label(_ minutes: Int) -> String { String(format: "%02d:%02d", minutes / 60, minutes % 60) }
 }
 
-/// 晚间提醒：只在今日总结或明日目标还空着时提醒，并且只提缺的那一样。
-///
-/// 系统通知是预先排好的（应用没开着也会到点弹出），所以每次内容变化后重排：今天这一条按此刻的情况写
-/// 或干脆不排；之后 13 天各排一条通用的，免得几天不开应用就再也收不到。全部在本机，不经过任何服务器。
+/// 晚间通知：只在日迹开着时弹（不预先排系统通知，也不需要后台运行）。到了提醒时间、今日总结或明日目标
+/// 还空着，就弹一次，只提缺的那一样；一天最多一次。日迹没开着时由服务器按兜底时间发邮件（MailReminder）。
 @MainActor
 public enum EveningReminder {
     static let prefix = "riji.evening."
-    static let days = 14
+    static let notifiedKey = "riji.notified"
 
     public static func requestAuthorization() async {
         guard ReminderSettings.enabled else { return }
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
     }
 
-    public static func reschedule(book: DailyBook, today: String, now: Date) async {
+    /// 应用开着时每分钟、以及内容变化后调用。
+    public static func notifyIfDue(book: DailyBook, today: String, now: Date) async {
         let center = UNUserNotificationCenter.current()
-        let old = await center.pendingNotificationRequests().map(\.identifier)
-            .filter { $0.hasPrefix(prefix) || $0 == "riji.evening" }  // 后者是旧版每天重复的那条
-        center.removePendingNotificationRequests(withIdentifiers: old)
-        guard ReminderSettings.enabled else { return }
+        // 旧版预先排好的通知一次清掉（日迹没开着时不该再弹）
+        let old = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) || $0 == "riji.evening" }
+        if !old.isEmpty { center.removePendingNotificationRequests(withIdentifiers: old) }
+        guard ReminderSettings.enabled, UserDefaults.standard.string(forKey: notifiedKey) != today,
+              let fire = book.clock.instant(minutes: ReminderSettings.minutes, on: today), now >= fire,
+              let nudge = book.evening(on: today).nudge else { return }
         let status = await center.notificationSettings().authorizationStatus
         guard status == .authorized || status == .provisional else { return }
-
-        let clock = book.clock
-        let minutes = ReminderSettings.minutes
-        for offset in 0..<days {
-            let date = clock.adding(days: offset, to: today)
-            // 早于分界线的提醒时间（比如 00:30）属于这一天的深夜
-            guard let fire = clock.instant(minutes: minutes, on: date), fire > now, let nudge = offset == 0 ? book.evening(on: date).nudge : Evening.genericNudge else { continue }
-            let content = UNMutableNotificationContent()
-            content.title = nudge.title
-            content.body = nudge.body
-            content.sound = .default
-            content.threadIdentifier = "evening"
-            let parts = clock.calendar.dateComponents([.timeZone, .year, .month, .day, .hour, .minute], from: fire)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
-            try? await center.add(UNNotificationRequest(identifier: prefix + date, content: content, trigger: trigger))
-        }
+        let content = UNMutableNotificationContent()
+        content.title = nudge.title
+        content.body = nudge.body
+        content.sound = .default
+        content.threadIdentifier = "evening"
+        try? await center.add(UNNotificationRequest(identifier: "riji.now.\(today)", content: content, trigger: nil))
+        UserDefaults.standard.set(today, forKey: notifiedKey)
     }
 }
 
@@ -107,13 +99,13 @@ public struct ReminderSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section {
-                Toggle("每晚提醒写今日总结和明日目标", isOn: touched($enabled))
+                Toggle("到点弹通知（日迹开着时）", isOn: touched($enabled))
                 DatePicker("提醒时间", selection: time, displayedComponents: .hourAndMinute)
                     .disabled(!enabled)
             } header: {
-                Text("系统通知")
+                Text("晚间提醒")
             } footer: {
-                Text("都写好了就不提醒；只差一样，就只提那一样。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。")
+                Text("日迹开着时，到了提醒时间还缺东西就弹一次通知，只提缺的那一样；日迹没开着就交给下面的邮件。第二天早上如果昨天还没写总结，今天页顶部会出现「补写」。")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
