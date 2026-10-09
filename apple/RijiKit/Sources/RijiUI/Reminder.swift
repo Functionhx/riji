@@ -166,17 +166,19 @@ public struct ReminderSettingsView: View {
     }
 }
 
-/// 设置里的「同步」：开启、状态、立即同步、添加手机（这台 Mac 是配对的发起端）。
+/// 设置里的「同步」。没开启时：用邀请码加入 / 输入另一台设备的配对码 / （已有连接码）在这台设备上开启。
+/// 开启后：状态与用量、立即同步、添加设备（发起配对）；站长可以邀请朋友，朋友可以删除自己的空间。
 struct SyncSection: View {
     let sync: SyncController
     let hasToken: Bool
+    @State private var inviteCode = ""
+    @State private var pairCode = ""
+    @State private var confirmDelete = false
 
     var body: some View {
         Section {
             if !sync.enabled {
-                Button("在这台 Mac 上开启同步") { sync.enable() }
-                    .disabled(!hasToken)
-                if !hasToken { Text("先在下面「邮件提醒」里填连接码。").font(.caption).foregroundStyle(.secondary) }
+                startView
             } else {
                 HStack {
                     Text(statusLine)
@@ -184,13 +186,62 @@ struct SyncSection: View {
                     Button(sync.syncing ? "同步中…" : "立即同步") { Task { await sync.sync() } }.disabled(sync.syncing)
                 }
                 pairingView
+                if let space = sync.space {
+                    if space.admin {
+                        HStack {
+                            Button("邀请朋友…") { Task { await sync.createInvite() } }
+                            if let invite = sync.invite {
+                                Text(String(invite.prefix(5)) + "-" + String(invite.suffix(5)))
+                                    .font(.system(size: 18, weight: .semibold, design: .monospaced)).textSelection(.enabled)
+                                Text("一次性，7 天有效").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        Button("删除我的空间…", role: .destructive) { confirmDelete = true }
+                    }
+                }
             }
+            if let notice = sync.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         } header: {
             Text("同步")
         } footer: {
-            Text("手机与 Mac 的内容端到端加密同步：密钥只在你的设备上，腾讯云只存密文。打开应用、内容变化后与每分钟会自动同步。")
+            Text("内容与设置端到端加密：密钥只在你的设备上，服务器只存密文。服务器能看到的只有设备数、数据大小与时间；"
+                 + "开了邮件提醒的，还有收件邮箱、提醒时间与每天的几个数字。")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .confirmationDialog("删除服务器上的这个空间？", isPresented: $confirmDelete) {
+            Button("删除", role: .destructive) { Task { await sync.deleteSpace() } }
+        } message: {
+            Text("服务器上的加密数据、邮件提醒设置和连接码都会删除，其他设备也会停止同步。这台设备上的笔记会保留。")
+        }
+    }
+
+    @ViewBuilder
+    private var startView: some View {
+        switch sync.joining {
+        case .working:
+            Text("正在连接…").foregroundStyle(.secondary)
+        case let .confirm(sas):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("请确认另一台设备上显示的比对码").font(.callout)
+                Text(String(sas.prefix(3)) + " " + String(sas.suffix(3))).font(.system(size: 30, weight: .semibold, design: .monospaced))
+                Text("一致的话，在那台设备上点「一致，发送」。正在等待…").font(.caption).foregroundStyle(.secondary)
+                Button("取消") { sync.cancelJoining() }
+            }
+        case .idle, .failed:
+            if case let .failed(message) = sync.joining { Text(message).foregroundStyle(.red) }
+            HStack {
+                TextField("邀请码", text: $inviteCode, prompt: Text("朋友给你的 10 位邀请码"))
+                Button("加入") { Task { await sync.joinWithInvite(inviteCode) } }.disabled(inviteCode.count < 10)
+            }
+            HStack {
+                TextField("配对码", text: $pairCode, prompt: Text("另一台设备上显示的 8 位数字"))
+                Button("配对") { sync.joinPairing(pairCode) }.disabled(pairCode.filter(\.isNumber).count != 8)
+            }
+            if hasToken {
+                Button("在这台 Mac 上开启同步（第一台设备）") { sync.enable() }
+            }
         }
     }
 
@@ -198,6 +249,7 @@ struct SyncSection: View {
         var parts = [sync.status]
         if let last = sync.lastSync { parts.append(last.formatted(date: .omitted, time: .shortened)) }
         if sync.devices > 0 { parts.append("\(sync.devices) 台设备") }
+        if let space = sync.space, space.quota > 0 { parts.append(String(format: "%.1f / %d MB", Double(space.bytes) / 1_048_576, space.quota / 1_048_576)) }
         return parts.joined(separator: " · ")
     }
 
@@ -205,12 +257,12 @@ struct SyncSection: View {
     private var pairingView: some View {
         switch sync.pairing {
         case .idle:
-            Button("添加手机…") { sync.startPairing() }
+            Button("添加设备…") { sync.startPairing() }
         case .starting:
             Text("正在生成配对码…").foregroundStyle(.secondary)
         case let .waiting(code):
             VStack(alignment: .leading, spacing: 6) {
-                Text("在手机「我 → 同步」里输入这串数字（10 分钟内有效）").font(.callout)
+                Text("在另一台设备的「同步」里输入这串数字（10 分钟内有效）").font(.callout)
                 Text(String(code.prefix(4)) + " " + String(code.suffix(4)))
                     .font(.system(size: 30, weight: .semibold, design: .monospaced))
                     .textSelection(.enabled)
@@ -218,7 +270,7 @@ struct SyncSection: View {
             }
         case let .confirm(_, sas):
             VStack(alignment: .leading, spacing: 8) {
-                Text("手机上显示的比对码是这个吗？").font(.callout)
+                Text("另一台设备上显示的比对码是这个吗？").font(.callout)
                 Text(String(sas.prefix(3)) + " " + String(sas.suffix(3)))
                     .font(.system(size: 30, weight: .semibold, design: .monospaced))
                 Text("一致才点「一致，发送」：不一致说明有人在中间冒充，取消即可。").font(.caption).foregroundStyle(.secondary)
@@ -231,7 +283,7 @@ struct SyncSection: View {
             Text("正在发送…").foregroundStyle(.secondary)
         case .done:
             HStack {
-                Text("已发送，手机正在同步")
+                Text("已发送，那台设备正在同步")
                 Spacer()
                 Button("完成") { sync.cancelPairing() }
             }

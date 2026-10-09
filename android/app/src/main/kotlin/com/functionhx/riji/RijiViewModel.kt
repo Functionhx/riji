@@ -72,6 +72,25 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
     private var engine: com.functionhx.riji.core.SyncEngine? = null
     private var pairJob: Job? = null
 
+    // 发起配对（这台设备已开启同步时添加另一台）
+    sealed interface StartState {
+        data object Idle : StartState
+        data class Waiting(val code: String) : StartState
+        data class Confirm(val sas: String) : StartState
+        data object Done : StartState
+        data class Failed(val message: String) : StartState
+    }
+    var startState by mutableStateOf<StartState>(StartState.Idle)
+        private set
+    private var starter: PairingStart? = null
+    private var startJob: Job? = null
+    var space by mutableStateOf<Spaces.Info?>(null)
+        private set
+    var invite by mutableStateOf<String?>(null)
+        private set
+    var notice by mutableStateOf<String?>(null)
+        private set
+
     init {
         val prefs = application.getSharedPreferences("riji", 0)
         val device = prefs.getString("device", null) ?: "android-${UUID.randomUUID().toString().take(8)}".also {
@@ -96,6 +115,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         publishSettings()
         lastSync = engine?.lastSync
         syncStatus = if (lastSync == null) "已开启" else "已同步"
+        viewModelScope.launch { space = withContext(Dispatchers.IO) { runCatching { Spaces.info(token) }.getOrNull() } }
     }
 
     /** 同步一轮（IO 线程）；拉回了东西就合并同一天的重复页、刷新界面。 */
@@ -146,6 +166,101 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         applyDayStart(EveningReminder.dayStart(app))
         applyCarryByDefault(EveningReminder.carryByDefault(app))
     }
+
+    // ---------------------------------------------------------------- 第一台设备 / 邀请 / 删除空间
+
+    /** 这台设备是空间里的第一台：生成日迹密钥、开启同步（需要连接码）。 */
+    fun enableAsFirst() {
+        val app = getApplication<Application>()
+        if (MailReminder.load(app).token.isEmpty()) { notice = "先填连接码，或用邀请码加入"; return }
+        val key = com.functionhx.riji.core.SyncKey.generate()
+        SyncKeyStore.save(app, key)
+        startSync(key)
+        syncNow()
+    }
+
+    /** 朋友：用邀请码建自己的空间，拿到连接码，这台设备生成自己的密钥。 */
+    fun joinWithInvite(code: String) {
+        notice = null
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Spaces.redeem(code) } }
+            result.onSuccess { token ->
+                val app = getApplication<Application>()
+                MailReminder.save(app, MailReminder.load(app).copy(token = token), touch = false)
+                mail = MailReminder.load(app)
+                enableAsFirst()
+                notice = "已加入：这是你自己的空间，内容只有你的设备解得开"
+            }.onFailure { notice = it.message }
+        }
+    }
+
+    fun createInvite() {
+        notice = null
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { Spaces.invite(mail.token) } }
+                .onSuccess { invite = it }.onFailure { notice = it.message }
+        }
+    }
+
+    /** 删除服务器上的这个空间；本机的笔记保留。 */
+    fun deleteSpace() {
+        notice = null
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            withContext(Dispatchers.IO) { runCatching { Spaces.delete(mail.token) } }
+                .onSuccess {
+                    engine = null
+                    syncEnabled = false
+                    space = null
+                    File(app.filesDir, "riji/sync-key.json").delete()
+                    File(app.filesDir, "riji/sync").deleteRecursively()
+                    MailReminder.save(app, MailReminder.load(app).copy(token = ""), touch = false)
+                    mail = MailReminder.load(app)
+                    notice = "服务器上的空间已删除；这台手机上的笔记还在"
+                }.onFailure { notice = it.message }
+        }
+    }
+
+    // ---------------------------------------------------------------- 配对（发起端）
+
+    fun startPairing() {
+        startJob?.cancel()
+        val token = mail.token
+        startJob = viewModelScope.launch {
+            val pairing = PairingStart(token)
+            starter = pairing
+            val code = withContext(Dispatchers.IO) { runCatching { pairing.start() } }.getOrElse { startState = StartState.Failed(it.message ?: "配对失败"); return@launch }
+            startState = StartState.Waiting(code)
+            val deadline = System.currentTimeMillis() + 600_000
+            while (System.currentTimeMillis() < deadline) {
+                delay(1_500)
+                val sas = withContext(Dispatchers.IO) { runCatching { pairing.poll() } }.getOrElse { startState = StartState.Failed(it.message ?: "配对失败"); return@launch }
+                    ?: continue
+                startState = StartState.Confirm(sas)
+                return@launch
+            }
+            startState = StartState.Failed("配对码已过期")
+        }
+    }
+
+    /** 站长确认两边比对码一致：把日迹密钥、连接码与全部设置封进信封。 */
+    fun confirmPairing() {
+        val pairing = starter ?: return
+        val app = getApplication<Application>()
+        val key = SyncKeyStore.load(app) ?: return
+        val payload = com.functionhx.riji.core.JsonValue.obj(
+            "key" to com.functionhx.riji.core.JsonValue.str(com.functionhx.riji.core.Base64Url.encode(key.key)),
+            "epoch" to com.functionhx.riji.core.JsonValue.num(key.epoch),
+            "token" to com.functionhx.riji.core.JsonValue.str(mail.token),
+            "settings" to com.functionhx.riji.core.JsonValue.parse(MailReminder.syncedSettings(app).toString()),
+        )
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { pairing.seal(payload) } }
+                .onSuccess { startState = StartState.Done }.onFailure { startState = StartState.Failed(it.message ?: "发送失败") }
+        }
+    }
+
+    fun cancelStart() { startJob?.cancel(); starter = null; startState = StartState.Idle }
 
     fun joinPairing(code: String) {
         val digits = code.filter(Char::isDigit)

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隐私说明 · 日迹</title>
+<meta name="description" content="日迹的隐私说明：内容端到端加密，服务器只存密文；服务器能看到什么、看不到什么。">
+<link rel="icon" type="image/png" href="assets/favicon-64.png">
+<style>
+:root{--paper:#FAF8F3;--paper2:#F2EFE7;--ink:#1D1C1A;--ink2:#55524A;--ink3:#8F8B80;--line:#E6E2D8;--ochre:#B5762A;
+  --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",serif;--sans:-apple-system,"PingFang SC","HarmonyOS Sans SC","Noto Sans SC",sans-serif}
+@media (prefers-color-scheme:dark){:root{--paper:#141413;--paper2:#1C1B19;--ink:#F3F0E8;--ink2:#B5B1A6;--ink3:#7D796F;--line:#2D2B27;--ochre:#D79A4E}}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.85 var(--sans)}
+main{max-width:760px;margin:0 auto;padding:56px 24px 80px}
+a{color:var(--ochre)}
+h1,h2{font-family:var(--serif);font-weight:600}
+h1{font-size:40px;margin:18px 0 8px}
+h2{font-size:22px;margin:40px 0 10px}
+.back{text-decoration:none;font-size:14px}
+.lead{color:var(--ink2);font-size:17px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:15px}
+th,td{border-top:1px solid var(--line);padding:12px 10px;text-align:left;vertical-align:top}
+th{font-weight:600;color:var(--ink2);width:22%}
+.box{background:var(--paper2);border-radius:14px;padding:16px 20px;margin:16px 0}
+small{color:var(--ink3)}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">← 日迹</a>
+  <h1>隐私说明</h1>
+  <p class="lead">一句话：你写的内容在离开设备之前就加密了，钥匙只在你自己的设备上。运行服务器的人——包括日迹的作者——看不到你写了什么。</p>
+
+  <h2>数据在哪里</h2>
+  <p>所有内容先保存在你的设备上（macOS 应用沙盒、Android 应用私有目录，由系统的文件加密保护）。开启同步后，改动被打包成「数据段」，用只属于你空间的日迹密钥做 AES-256-GCM 加密，再传到作者的腾讯云服务器（fanyuchen.com.cn）。另一台设备取回、解密、合并。</p>
+  <div class="box">日迹密钥由你空间里的第一台设备随机生成，配对时在两台设备之间加密传递，<b>从不交给服务器</b>。配对时两台设备会显示同一个 6 位比对码，你当面核对一致才会传递；服务器若冒充中间人，两边的比对码会不一样。</div>
+
+  <h2>服务器能看到什么、看不到什么</h2>
+  <table>
+    <tr><th>看不到</th><td>今日目标、Spark、随记、总结、明日目标、长期进度、设置——所有内容都是密文；也看不出你改了哪条记录、写了多少字。</td></tr>
+    <tr><th>看得到</th><td>你的空间有几台设备、每个数据段的大小与上传时间。</td></tr>
+    <tr><th>开了邮件提醒才有</th><td>收件邮箱、提醒时间、兜底时间、一天的分界线，以及每天的几个数字：总结写没写、明日目标几条、完成几件。服务器要靠它们决定这天要不要发提醒邮件，所以没法加密。邮件提醒默认关闭。</td></tr>
+  </table>
+
+  <h2>我们不做的事</h2>
+  <ul>
+    <li>服务不记录请求日志：不留 IP、访问路径与内容；网站服务器对 <code>/riji/</code> 也关闭了访问日志。</li>
+    <li>不接入任何统计、广告或第三方 SDK。</li>
+    <li>公开的健康检查只回答「服务是否正常」，不透露有多少用户。</li>
+  </ul>
+
+  <h2>你的空间，你说了算</h2>
+  <ul>
+    <li>每个用户一个独立空间、一个连接码（服务器只存它的哈希），一个连接码只能读写自己的空间。</li>
+    <li>朋友通过一次性邀请码加入；每个空间 100 MB 上限。</li>
+    <li>在「设置 / 我 → 同步」里可以随时<b>删除我的空间</b>：服务器上的数据段、提醒设置与连接码全部删除。你设备上的笔记会保留。</li>
+  </ul>
+
+  <h2>剩下的一层信任</h2>
+  <p>应用是作者发布的。理论上，一个恶意的发布者可以在应用里偷偷把密钥传出去。所以日迹的<a href="https://github.com/Functionhx/riji">源码完全公开</a>：你可以自己检查，也可以自己编译安装；服务端代码在 <code>server/riji-server/</code>，同样可以自己部署一套。</p>
+
+  <p><small>最后更新：2026 年 10 月 · 问题与建议：在 GitHub 上提 issue。</small></p>
+</main>
+</body>
+</html>

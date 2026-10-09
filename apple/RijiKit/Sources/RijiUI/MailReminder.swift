@@ -96,8 +96,8 @@ public final class MailReminder {
     }
 
     /// 同步记录比本机新：照着改（提醒、分界线、邮件、连接码）。不改修改时间以外的东西，所以不会再回写。
-    public func adoptSynced(_ shared: JSONValue) {
-        guard let updated = shared["updated_at"]?.int, updated > defaults.integer(forKey: Self.updatedKey) else { return }
+    public func adoptSynced(_ shared: JSONValue, force: Bool = false) {
+        guard let updated = shared["updated_at"]?.int, force || updated > defaults.integer(forKey: Self.updatedKey) else { return }
         if let value = shared["reminder"]?.bool { defaults.set(value, forKey: ReminderSettings.enabledKey) }
         if let value = shared["minutes"]?.int { defaults.set(value, forKey: ReminderSettings.minutesKey) }
         if let value = shared["day_start"]?.int { defaults.set(value, forKey: ReminderSettings.dayStartKey) }

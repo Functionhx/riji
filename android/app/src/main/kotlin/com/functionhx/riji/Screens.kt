@@ -470,43 +470,94 @@ private fun EditDialog(title: String, initial: String, onDismiss: () -> Unit, on
 
 // ---------------------------------------------------------------- 时间线 / 进度 / 我
 
-/** 同步：没配对时输入 Mac 上的配对码，核对比对码；配对后显示状态与「立即同步」。 */
+/**
+ * 同步。没开启时：用邀请码加入 / 输入另一台设备的配对码 / （已有连接码）在这台手机上开启。
+ * 开启后：状态与用量、立即同步、添加设备（发起配对）；站长可以邀请朋友，朋友可以删除自己的空间。
+ */
 @Composable
 private fun SyncSettings(model: RijiViewModel) {
     val ink = LocalInk.current
     Eyebrow("同步")
     if (model.syncEnabled) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val space = model.space
             val parts = listOfNotNull(
                 model.syncStatus,
                 model.lastSync?.atZone(java.time.ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("HH:mm")),
                 model.syncDevices.takeIf { it > 0 }?.let { "$it 台设备" },
+                space?.takeIf { it.quota > 0 }?.let { "%.1f / %d MB".format(it.bytes / 1_048_576.0, it.quota / 1_048_576) },
             )
             Text(parts.joinToString(" · "), style = body(14.sp, ink.ink), modifier = Modifier.weight(1f))
             TextButton({ model.syncNow() }, enabled = !model.syncing) { Text(if (model.syncing) "同步中…" else "立即同步", color = ink.ochre) }
         }
-        Text("与 Mac 端到端加密同步：密钥只在你的设备上，腾讯云只存密文。打开应用、内容变化后与每分钟会自动同步。", style = body(13.sp, ink.ink3))
-        return
-    }
-    var code by remember { mutableStateOf("") }
-    when (val state = model.pairState) {
-        is RijiViewModel.PairState.Confirm -> {
-            Text("请确认 Mac 上显示的比对码", style = body(14.sp, ink.ink2))
-            Text(state.sas.take(3) + " " + state.sas.takeLast(3), style = mono(32.sp, ink.ink).copy(fontWeight = FontWeight.SemiBold))
-            Text("一致的话，在 Mac 上点「一致，发送」；不一致就取消。正在等 Mac…", style = body(13.sp, ink.ink3))
-            TextButton({ model.cancelPairing() }) { Text("取消", color = ink.ink2) }
+        when (val state = model.startState) {
+            RijiViewModel.StartState.Idle -> TextButton({ model.startPairing() }) { Text("添加设备…", color = ink.ochre) }
+            is RijiViewModel.StartState.Waiting -> {
+                Text("在另一台设备的「同步」里输入这串数字（10 分钟内有效）", style = body(13.5.sp, ink.ink2))
+                Text(state.code.take(4) + " " + state.code.takeLast(4), style = mono(32.sp, ink.ink).copy(fontWeight = FontWeight.SemiBold))
+                TextButton({ model.cancelStart() }) { Text("取消", color = ink.ink2) }
+            }
+            is RijiViewModel.StartState.Confirm -> {
+                Text("另一台设备上显示的比对码是这个吗？", style = body(13.5.sp, ink.ink2))
+                Text(state.sas.take(3) + " " + state.sas.takeLast(3), style = mono(32.sp, ink.ink).copy(fontWeight = FontWeight.SemiBold))
+                Text("一致才点「一致，发送」：不一致说明有人在中间冒充，取消即可。", style = body(12.sp, ink.ink3))
+                Row {
+                    TextButton({ model.confirmPairing() }) { Text("一致，发送", color = ink.ochre) }
+                    TextButton({ model.cancelStart() }) { Text("不一致，取消", color = ink.ink2) }
+                }
+            }
+            RijiViewModel.StartState.Done -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("已发送，那台设备正在同步", style = body(13.5.sp, ink.ink), modifier = Modifier.weight(1f))
+                TextButton({ model.cancelStart() }) { Text("完成", color = ink.ochre) }
+            }
+            is RijiViewModel.StartState.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(state.message, style = body(12.sp, Color(0xFFB5443A)), modifier = Modifier.weight(1f))
+                TextButton({ model.startPairing() }) { Text("重试", color = ink.ochre) }
+            }
         }
-        RijiViewModel.PairState.Joining -> Text("正在连接…", style = body(14.sp, ink.ink2))
-        RijiViewModel.PairState.Done -> Text("配对完成，正在同步…", style = body(14.sp, ink.ink))
-        else -> {
-            Text("在 Mac 的「设置 → 同步」里点「添加手机」，把显示的 8 位数字填在这里。", style = body(13.5.sp, ink.ink2))
-            LabeledField("配对码", code, singleLine = true) { code = it.filter(Char::isDigit).take(8) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton({ model.joinPairing(code) }, enabled = code.length == 8) { Text("配对", color = ink.ochre) }
+        model.space?.let { space ->
+            if (space.admin) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton({ model.createInvite() }) { Text("邀请朋友…", color = ink.ochre) }
+                    model.invite?.let { Text(it.take(5) + "-" + it.takeLast(5) + "  一次性，7 天有效", style = mono(13.sp, ink.ink)) }
+                }
+            } else {
+                var confirm by remember { mutableStateOf(false) }
+                TextButton({ confirm = true }) { Text("删除我的空间…", color = Color(0xFFB5443A)) }
+                if (confirm) AlertDialog(
+                    onDismissRequest = { confirm = false },
+                    title = { Text("删除服务器上的这个空间？") },
+                    text = { Text("服务器上的加密数据、邮件提醒设置和连接码都会删除，其他设备也会停止同步。这台手机上的笔记会保留。") },
+                    confirmButton = { TextButton({ confirm = false; model.deleteSpace() }) { Text("删除", color = Color(0xFFB5443A)) } },
+                    dismissButton = { TextButton({ confirm = false }) { Text("取消") } },
+                )
+            }
+        }
+    } else {
+        var invite by remember { mutableStateOf("") }
+        var code by remember { mutableStateOf("") }
+        when (val state = model.pairState) {
+            is RijiViewModel.PairState.Confirm -> {
+                Text("请确认另一台设备上显示的比对码", style = body(14.sp, ink.ink2))
+                Text(state.sas.take(3) + " " + state.sas.takeLast(3), style = mono(32.sp, ink.ink).copy(fontWeight = FontWeight.SemiBold))
+                Text("一致的话，在那台设备上点「一致，发送」；不一致就取消。正在等待…", style = body(13.sp, ink.ink3))
+                TextButton({ model.cancelPairing() }) { Text("取消", color = ink.ink2) }
+            }
+            RijiViewModel.PairState.Joining -> Text("正在连接…", style = body(14.sp, ink.ink2))
+            RijiViewModel.PairState.Done -> Text("配对完成，正在同步…", style = body(14.sp, ink.ink))
+            else -> {
                 (state as? RijiViewModel.PairState.Failed)?.let { Text(it.message, style = body(12.sp, Color(0xFFB5443A))) }
+                LabeledField("朋友给你的邀请码（10 位）", invite, singleLine = true) { invite = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(10) }
+                TextButton({ model.joinWithInvite(invite) }, enabled = invite.length == 10) { Text("用邀请码加入", color = ink.ochre) }
+                LabeledField("或：另一台设备上显示的配对码（8 位）", code, singleLine = true) { code = it.filter(Char::isDigit).take(8) }
+                TextButton({ model.joinPairing(code) }, enabled = code.length == 8) { Text("配对", color = ink.ochre) }
+                if (model.mail.token.isNotEmpty()) TextButton({ model.enableAsFirst() }) { Text("在这台手机上开启同步（第一台设备）", color = ink.ochre) }
             }
         }
     }
+    model.notice?.let { Text(it, style = body(12.5.sp, ink.ink2)) }
+    Text("内容与设置端到端加密：密钥只在你的设备上，服务器只存密文。服务器能看到的只有设备数、数据大小与时间；" +
+        "开了邮件提醒的，还有收件邮箱、提醒时间与每天的几个数字。", style = body(13.sp, ink.ink3))
 }
 
 /** 邮件提醒（兜底）：开关、收件邮箱（可多个）、兜底时间、连接码、测试邮件。 */

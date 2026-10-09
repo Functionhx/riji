@@ -6,7 +6,9 @@ import RijiKit
 /// 腾讯云 riji-server 同步接口的 HTTP 访问（server/riji-server）。连接码与邮件提醒共用。
 struct HTTPSyncTransport: SyncTransport {
     static let endpoint = URL(string: "https://fanyuchen.com.cn/riji/sync/")!
+    static let apiEndpoint = URL(string: "https://fanyuchen.com.cn/riji/api/")!
     let token: String
+    var base: URL = HTTPSyncTransport.endpoint
 
     struct Failure: Error, LocalizedError {
         var status: Int
@@ -16,6 +18,9 @@ struct HTTPSyncTransport: SyncTransport {
             case (401, _): "连接码不对"
             case (404, "not_found"): "配对码不存在或已过期"
             case (409, "taken"): "这个配对码已经被另一台设备用了"
+            case (404, "invite_invalid"): "邀请码不对、已经用过或已过期"
+            case (403, "admin_space"): "站长空间不能删除"
+            case (413, _): "空间满了（100 MB）"
             case (429, _): "试得太频繁了，过几分钟再来"
             default: "同步服务返回 \(status)\(code.map { "（\($0)）" } ?? "")"
             }
@@ -23,11 +28,11 @@ struct HTTPSyncTransport: SyncTransport {
     }
 
     func request(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil, auth: Bool = true) async throws -> (Int, [String: Any]) {
-        var components = URLComponents(url: Self.endpoint.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!, timeoutInterval: 30)
         request.httpMethod = method
-        if auth { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if auth, !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -90,6 +95,26 @@ public final class SyncController {
     public private(set) var lastSync: Date?
     public private(set) var pairing: Pairing = .idle
 
+    /// 这台设备加入别人发起的配对（加入端）
+    public enum Joining: Equatable {
+        case idle
+        case working
+        case confirm(sas: String)
+        case failed(String)
+    }
+    public private(set) var joining: Joining = .idle
+
+    /// 服务器上的这个空间：是不是站长、用了多少
+    public struct Space: Equatable, Sendable {
+        public var admin: Bool
+        public var bytes: Int
+        public var quota: Int
+    }
+    public private(set) var space: Space?
+    public private(set) var invite: String?
+    public private(set) var notice: String?
+    private var joinTask: Task<Void, Never>?
+
     private let model: RijiModel
     private let folder: URL
     private var engine: SyncEngine?
@@ -119,6 +144,7 @@ public final class SyncController {
             lastSync = engine?.state.lastSync
             publishSettings()
             status = lastSync == nil ? "已开启" : "已同步"
+            Task { await refreshSpace() }
         } catch {
             status = "同步没能启动：\(error.localizedDescription)"
         }
@@ -157,6 +183,124 @@ public final class SyncController {
         } catch {
             status = "同步失败：\(error.localizedDescription)"
         }
+    }
+
+    // ---------------------------------------------------------------- 空间：邀请、加入、删除
+
+    private var api: HTTPSyncTransport { HTTPSyncTransport(token: MailReminder.shared.token, base: HTTPSyncTransport.apiEndpoint) }
+
+    private func ok(_ result: (Int, [String: Any])) throws -> [String: Any] {
+        guard result.0 == 200 else { throw HTTPSyncTransport.Failure(status: result.0, code: result.1["error"] as? String) }
+        return result.1
+    }
+
+    public func refreshSpace() async {
+        guard let json = try? ok(await api.request("GET", "spaces/me")) else { return }
+        space = Space(admin: json["admin"] as? Bool ?? false, bytes: json["bytes"] as? Int ?? 0, quota: json["quota"] as? Int ?? 0)
+    }
+
+    /// 朋友：用站长给的邀请码建自己的空间，拿到连接码，这台设备生成自己的日迹密钥、开启同步。
+    public func joinWithInvite(_ code: String) async {
+        notice = nil
+        do {
+            let json = try ok(await HTTPSyncTransport(token: "", base: HTTPSyncTransport.apiEndpoint)
+                .request("POST", "spaces", body: ["invite": code], auth: false))
+            guard let token = json["token"] as? String else { throw HTTPSyncTransport.Failure(status: 500, code: nil) }
+            MailReminder.shared.token = token
+            enable()
+            notice = "已加入：这是你自己的空间，内容只有你的设备解得开"
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    /// 站长：生成一次性邀请码（7 天有效）。
+    public func createInvite() async {
+        notice = nil
+        do {
+            invite = try ok(await api.request("POST", "invites", body: [:]))["invite"] as? String
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    /// 删除服务器上的这个空间（日志段、提醒、连接码）。本机的笔记保留。
+    public func deleteSpace() async {
+        notice = nil
+        do {
+            _ = try ok(await api.request("DELETE", "spaces/me"))
+            engine = nil
+            enabled = false
+            space = nil
+            try? FileManager.default.removeItem(at: keyURL)
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("sync"))
+            MailReminder.shared.token = ""
+            status = ""
+            notice = "服务器上的空间已删除；这台设备上的笔记还在"
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    // ---------------------------------------------------------------- 配对（加入端）
+
+    /// 输入另一台设备显示的 8 位配对码：两边显示比对码，对方确认后取回信封（日迹密钥、连接码、设置）。
+    public func joinPairing(_ code: String) {
+        let digits = code.filter(\.isNumber)
+        guard digits.count == 8 else { joining = .failed("配对码是 8 位数字"); return }
+        joinTask?.cancel()
+        joining = .working
+        let transport = HTTPSyncTransport(token: "")
+        joinTask = Task { [weak self] in
+            let own = RijiKit.Pairing.KeyPair()
+            do {
+                let joined = try await transport.request("POST", "pair/join", body: ["code": digits, "pub": own.publicKey], auth: false)
+                guard joined.0 == 200, let initiator = joined.1["pub"] as? String else {
+                    throw HTTPSyncTransport.Failure(status: joined.0, code: joined.1["error"] as? String)
+                }
+                let keys = RijiKit.Pairing.keys(shared: try RijiKit.Pairing.shared(own, peer: initiator),
+                                                transcript: RijiKit.Pairing.transcript(code: digits, initiator: initiator, joiner: own.publicKey))
+                self?.joining = .confirm(sas: keys.sas)
+                let deadline = Date().addingTimeInterval(600)
+                while Date() < deadline, !Task.isCancelled {
+                    try await Task.sleep(for: .seconds(1.5))
+                    let fetched = try await transport.request("POST", "pair/fetch", body: ["code": digits, "pub": own.publicKey], auth: false)
+                    if fetched.0 == 202 { continue }
+                    guard fetched.0 == 200, let sealed = fetched.1["sealed"] as? String else {
+                        throw HTTPSyncTransport.Failure(status: fetched.0, code: fetched.1["error"] as? String)
+                    }
+                    self?.adoptPairing(try RijiKit.Pairing.open(key: keys.key, code: digits, sealed: sealed))
+                    return
+                }
+                if !Task.isCancelled { self?.joining = .failed("等太久了，配对码已过期") }
+            } catch is CancellationError {
+            } catch {
+                self?.joining = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    public func cancelJoining() {
+        joinTask?.cancel()
+        joining = .idle
+    }
+
+    private func adoptPairing(_ payload: JSONValue) {
+        guard let text = payload["key"]?.string, let raw = Base64URL.decode(text), raw.count == 32 else {
+            joining = .failed("信封里没有密钥"); return
+        }
+        let key = SyncKey(key: raw, epoch: payload["epoch"]?.int ?? 0)
+        if let token = payload["token"]?.string { MailReminder.shared.token = token }
+        if let settings = payload["settings"] { MailReminder.shared.adoptSynced(settings, force: true) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: keyURL.path, contents: try key.json.canonicalData(), attributes: [.posixPermissions: 0o600])
+        } catch {
+            joining = .failed("没能保存密钥：\(error.localizedDescription)"); return
+        }
+        joining = .idle
+        start(with: key)
+        Task { await sync() }
     }
 
     // ---------------------------------------------------------------- 设置也同步
