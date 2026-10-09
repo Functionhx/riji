@@ -80,8 +80,34 @@ public final class MailReminder {
             "minutes": ReminderSettings.minutes,
             "delay": defaults.object(forKey: Self.delayKey) as? Int ?? 60,
             "day_start": ReminderSettings.dayStart,
+            "carry": ReminderSettings.carryByDefault,
             "updated_at": defaults.integer(forKey: Self.updatedKey),
         ]
+    }
+
+    /// 随内容一起加密同步的全部设置（含连接码）。
+    public var syncedSettings: JSONValue {
+        var json = settingsJSON
+        if case var .object(fields) = json {
+            fields["token"] = .string(token)
+            json = .object(fields)
+        }
+        return json
+    }
+
+    /// 同步记录比本机新：照着改（提醒、分界线、邮件、连接码）。不改修改时间以外的东西，所以不会再回写。
+    public func adoptSynced(_ shared: JSONValue) {
+        guard let updated = shared["updated_at"]?.int, updated > defaults.integer(forKey: Self.updatedKey) else { return }
+        if let value = shared["reminder"]?.bool { defaults.set(value, forKey: ReminderSettings.enabledKey) }
+        if let value = shared["minutes"]?.int { defaults.set(value, forKey: ReminderSettings.minutesKey) }
+        if let value = shared["day_start"]?.int { defaults.set(value, forKey: ReminderSettings.dayStartKey) }
+        if let value = shared["carry"]?.bool { defaults.set(value, forKey: ReminderSettings.carryKey) }
+        if let value = shared["email"]?.bool { defaults.set(value, forKey: Self.emailKey) }
+        if let value = shared["recipients"]?.array { defaults.set(value.compactMap(\.string).joined(separator: ", "), forKey: Self.recipientsKey) }
+        if let value = shared["delay"]?.int { defaults.set(value, forKey: Self.delayKey) }
+        if let value = shared["token"]?.string, !value.isEmpty, value != token { token = value }
+        defaults.set(updated, forKey: Self.updatedKey)
+        version += 1
     }
 
     /// 配对时一并交给新设备的提醒设置（与上报的格式相同）。

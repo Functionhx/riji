@@ -48,7 +48,21 @@ object MailReminder {
             .put("minutes", EveningReminder.minutes(context))
             .put("delay", s.delay)
             .put("day_start", EveningReminder.dayStart(context))
+            .put("carry", EveningReminder.carryByDefault(context))
             .put("updated_at", prefs(context).getLong("settings_updated", 0))
+    }
+
+    /** 随内容一起加密同步的全部设置（含连接码），格式与 Mac 相同。 */
+    fun syncedSettings(context: Context): JSONObject = settingsJson(context).put("token", load(context).token)
+
+    fun settingsUpdated(context: Context) = prefs(context).getLong("settings_updated", 0)
+
+    /** 同步记录比本机新：照着改（提醒、分界线、邮件、连接码）。返回是否改了。 */
+    fun adoptSynced(context: Context, shared: JSONObject): Boolean {
+        if (shared.optLong("updated_at", 0) <= settingsUpdated(context)) return false
+        adopt(context, shared)
+        shared.optString("token").takeIf { it.isNotEmpty() }?.let { token -> save(context, load(context).copy(token = token), touch = false) }
+        return true
     }
 
     /** 配对时从 Mac 带来的设置：直接采用（这台手机还没有自己的设置）。 */
@@ -69,6 +83,7 @@ object MailReminder {
             .putLong("settings_updated", updated)
             .apply()
         if (server.has("day_start")) EveningReminder.saveDayStart(context, server.optInt("day_start"))
+        if (server.has("carry")) EveningReminder.saveCarryByDefault(context, server.optBoolean("carry"))
         EveningReminder.save(context, server.optBoolean("reminder", true), server.optInt("minutes", EveningReminder.DEFAULT_MINUTES))
         return true
     }

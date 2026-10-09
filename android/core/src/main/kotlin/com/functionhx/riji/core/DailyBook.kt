@@ -24,6 +24,11 @@ data class DayStats(val total: Int, val done: Int, val carried: Int, val sparks:
 class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
     companion object { fun dayNoteId(date: String) = "day-$date" }
 
+    /** 没做完的事默认是否带到明天（每件事可以单独选，见 Block.carry）。内核默认带，应用里由设置决定。 */
+    var carryByDefault = true
+    fun willCarry(block: Block): Boolean = block.carry ?: carryByDefault
+    fun setCarry(carry: Boolean, blockId: String) = setAttr("carry", JsonValue.Bool(carry), blockId)
+
     private val lock = Any()
     private var cachedRevision = -1
     private var cachedDays: List<Day> = emptyList()
@@ -129,8 +134,9 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
     /** 一天收尾的情况：今日总结写了没有、明日目标定了几条、还有几件没做完（会自动延续）。 */
     fun evening(date: String): Evening {
         val plans = items(SectionRole.TOMORROW, date).count { normalized(it.text).isNotEmpty() }
-        val pending = items(SectionRole.TODO, date).count { !it.checked && it.carriedTo == null && !it.dropped }
-        return Evening(date, stats(date), !day(date)?.summary.isNullOrBlank(), plans, pending)
+        val open = items(SectionRole.TODO, date).filter { it.kind == BlockKind.CHECK && !it.checked && it.carriedTo == null && !it.dropped }
+        val pending = open.count(::willCarry)
+        return Evening(date, stats(date), !day(date)?.summary.isNullOrBlank(), plans, pending, open.size - pending)
     }
 
     /** 早上补写：昨天写过东西、却没写总结时返回昨天的日期。 */
@@ -174,7 +180,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
         val previous = days.firstOrNull { it.date < day.date } ?: return
         val target = section(SectionRole.TODO, day) ?: return
         val pending = section(SectionRole.TODO, previous)?.let(::children).orEmpty()
-            .filter { it.kind == BlockKind.CHECK && !it.checked && it.carriedTo == null && !it.dropped }
+            .filter { it.kind == BlockKind.CHECK && !it.checked && it.carriedTo == null && !it.dropped && willCarry(it) }
         val plans = if (day.date < clock.key(now)) emptyList() else section(SectionRole.TOMORROW, previous)?.let(::children).orEmpty()
             .filter { it.kind == BlockKind.CHECK && it.plannedTo == null && normalized(it.text).isNotEmpty() }
         if (pending.isEmpty() && plans.isEmpty()) return
@@ -376,7 +382,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
 }
 
 /** 一天的收尾：晚间提醒据此决定提不提醒、提醒什么。与 Swift 的 Evening 相同（文字也相同）。 */
-data class Evening(val date: String, val stats: DayStats, val hasSummary: Boolean, val plans: Int, val pending: Int) {
+data class Evening(val date: String, val stats: DayStats, val hasSummary: Boolean, val plans: Int, val pending: Int, val staying: Int = 0) {
     data class Nudge(val title: String, val body: String)
 
     val isComplete: Boolean get() = hasSummary && plans > 0

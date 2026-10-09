@@ -125,6 +125,26 @@ class DailyBookTest {
         assertEquals(SectionRole.entries.toSet(), book.blocks(day.noteId).mapNotNull { it.role }.toSet())
     }
 
+    @Test fun eachTaskChoosesWhetherToCarry() {
+        val book = book()
+        book.carryByDefault = false
+        val keep = book.add(BlockKind.CHECK, "sony 继续", SectionRole.TODO, "2026-10-07", now = monday)!!
+        book.add(BlockKind.CHECK, "随便看看", SectionRole.TODO, "2026-10-07", now = monday)
+        book.setCarry(true, keep.id)
+        book.add(BlockKind.CHECK, "写周报", SectionRole.TOMORROW, "2026-10-07", now = monday)
+        val evening = book.evening("2026-10-07")
+        assertEquals(1, evening.pending); assertEquals(1, evening.staying)
+        book.ensureDay("2026-10-08", monday)
+        assertEquals(listOf("写周报", "sony 继续"), book.items(SectionRole.TODO, "2026-10-08").map { it.text })
+        book.carryByDefault = true
+        val skip = book.add(BlockKind.CHECK, "今天的事", SectionRole.TODO, "2026-10-08", now = monday)!!
+        assertEquals(listOf("写周报", "随便看看", "sony 继续", "今天的事"), book.items(SectionRole.TODO, "2026-10-08").map { it.text })
+        book.setCarry(false, skip.id)
+        book.ensureDay("2026-10-09", monday)
+        assertEquals(listOf("写周报", "随便看看", "sony 继续"), book.items(SectionRole.TODO, "2026-10-09").map { it.text })
+        assertNull(book.block(skip.id)?.carriedTo)
+    }
+
     @Test fun tomorrowGoalsBecomeNextDaysGoals() {
         val book = book()
         val d = "2026-10-07"

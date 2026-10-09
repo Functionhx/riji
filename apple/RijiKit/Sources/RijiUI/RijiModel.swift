@@ -48,13 +48,16 @@ public final class RijiModel {
         }
         let store = try RecordStore(log: ChangeLog(url: folder.appendingPathComponent("changes.jsonl")),
                                     remoteLog: ChangeLog(url: folder.appendingPathComponent("remote-changes.jsonl")), device: device)
-        return RijiModel(book: DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.dayStart)))
+        let book = DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.dayStart))
+        book.carryByDefault = ReminderSettings.carryByDefault
+        return RijiModel(book: book)
     }
 
     /// 只在内存里的模型（预览、截图、测试）。
     public static func preview(seed: Bool = true, now: Date = Date()) -> RijiModel {
         let store = try! RecordStore(log: nil, device: "preview")
         let book = DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.defaultDayStart))
+        book.carryByDefault = true
         if seed { DemoData.seed(book, today: book.clock.key(for: now), now: now) }
         return RijiModel(book: book, now: { now })
     }
@@ -77,6 +80,12 @@ public final class RijiModel {
         book.clock.dayStart = minutes
         refreshDay()
         revision += 1
+    }
+
+    public func setCarryByDefault(_ carry: Bool) {
+        guard book.carryByDefault != carry else { return }
+        book.carryByDefault = carry
+        perform { try book.ensureDay(today, now: now()) }
     }
 
     public func open(_ date: String) {

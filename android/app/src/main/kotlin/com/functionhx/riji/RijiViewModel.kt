@@ -81,6 +81,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         val log = ChangeLog(File(application.filesDir, "riji/changes.jsonl"))
         val remote = ChangeLog(File(application.filesDir, "riji/remote-changes.jsonl"))
         book = DailyBook(RecordStore(log, device, remote), DayClock(dayStart = EveningReminder.dayStart(application)))
+        book.carryByDefault = EveningReminder.carryByDefault(application)
         today = book.clock.key(Instant.now())
         selectedDate = today
         perform { book.ensureDay(today) }
@@ -92,6 +93,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         val token = MailReminder.load(getApplication()).token.ifEmpty { syncStatus = "缺连接码"; return }
         engine = com.functionhx.riji.core.SyncEngine(book.store, key, HttpSyncTransport(token), File(getApplication<Application>().filesDir, "riji/sync"))
         syncEnabled = true
+        publishSettings()
         lastSync = engine?.lastSync
         syncStatus = if (lastSync == null) "已开启" else "已同步"
     }
@@ -109,12 +111,40 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
                 lastSync = engine.lastSync
                 syncStatus = report.problems.firstOrNull() ?: "已同步"
                 if (report.absorbed > 0) {
+                    adoptSettings()
                     revision++
                     perform { book.reconcileDays() }
                     refreshDay()
                 }
             }.onFailure { syncStatus = "同步失败：${it.message ?: it.javaClass.simpleName}" }
         }
+    }
+
+    // ---------------------------------------------------------------- 设置也同步（与 Mac 相同：settings:shared，最后一次修改为准）
+
+    private fun sharedSettings(): org.json.JSONObject? =
+        book.store.value(com.functionhx.riji.core.RecordType.SETTINGS, "shared")?.let { org.json.JSONObject(String(it.canonicalBytes())) }
+
+    /** 本机设置比同步记录新（或还没有记录）：写进记录，下一轮同步带给其他设备。 */
+    private fun publishSettings() {
+        if (engine == null) return
+        val app = getApplication<Application>()
+        val local = MailReminder.syncedSettings(app)
+        val shared = sharedSettings()
+        if (shared != null && shared.optLong("updated_at") >= local.optLong("updated_at")) return
+        perform { book.store.write(listOf(Triple(com.functionhx.riji.core.RecordType.SETTINGS, "shared", com.functionhx.riji.core.JsonValue.parse(local.toString())))) }
+    }
+
+    /** 同步记录比本机新：照着改本机设置与界面状态。 */
+    private fun adoptSettings() {
+        val app = getApplication<Application>()
+        val shared = sharedSettings() ?: return
+        if (!MailReminder.adoptSynced(app, shared)) return
+        mail = MailReminder.load(app)
+        reminderOn = EveningReminder.enabled(app)
+        reminderMinutes = EveningReminder.minutes(app)
+        applyDayStart(EveningReminder.dayStart(app))
+        applyCarryByDefault(EveningReminder.carryByDefault(app))
     }
 
     fun joinPairing(code: String) {
@@ -152,6 +182,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         reminderOn = EveningReminder.enabled(app)
         reminderMinutes = EveningReminder.minutes(app)
         applyDayStart(EveningReminder.dayStart(app))
+        applyCarryByDefault(EveningReminder.carryByDefault(app))
         SyncKeyStore.save(app, key)
         startSync(key)
         pairState = PairState.Done
@@ -228,6 +259,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         val tokenOnly = settings.copy(token = mail.token) == mail
         mail = settings
         MailReminder.save(getApplication(), settings, touch = !tokenOnly)
+        publishSettings()
         scheduleReport()
     }
 
@@ -259,12 +291,33 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var dayStart by mutableIntStateOf(EveningReminder.dayStart(application))
         private set
+    var carryByDefault by mutableStateOf(EveningReminder.carryByDefault(application))
+        private set
+
+    fun changeCarryByDefault(carry: Boolean) {
+        EveningReminder.saveCarryByDefault(getApplication(), carry)
+        MailReminder.touch(getApplication())
+        applyCarryByDefault(carry)
+        publishSettings()
+        scheduleReport()
+    }
+
+    private fun applyCarryByDefault(carry: Boolean) {
+        carryByDefault = carry
+        if (book.carryByDefault == carry) return
+        book.carryByDefault = carry
+        perform { book.ensureDay(today) }
+    }
+
+    fun setCarry(id: String, carry: Boolean) = perform { book.setCarry(carry, id) }
+    fun willCarry(item: com.functionhx.riji.core.Block) = revision.let { book.willCarry(item) }
 
     /** 改了一天的分界线：「今天」可能变成前一天。 */
     fun changeDayStart(minutes: Int) {
         EveningReminder.saveDayStart(getApplication(), minutes)
         MailReminder.touch(getApplication())
         applyDayStart(minutes)
+        publishSettings()
         scheduleReport()
     }
 
@@ -281,6 +334,7 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         reminderMinutes = minutes
         EveningReminder.save(getApplication(), on, minutes)
         MailReminder.touch(getApplication())
+        publishSettings()
         scheduleReport()
     }
 

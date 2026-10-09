@@ -117,6 +117,7 @@ public final class SyncController {
                                     folder: folder.appendingPathComponent("sync"))
             enabled = true
             lastSync = engine?.state.lastSync
+            publishSettings()
             status = lastSync == nil ? "已开启" : "已同步"
         } catch {
             status = "同步没能启动：\(error.localizedDescription)"
@@ -148,6 +149,7 @@ public final class SyncController {
             devices = report.devices
             lastSync = engine.state.lastSync
             if report.absorbed > 0 {
+                adoptSettings()
                 model.perform { try model.book.reconcileDays(now: model.currentDate) }
                 model.refreshDay()
             }
@@ -155,6 +157,29 @@ public final class SyncController {
         } catch {
             status = "同步失败：\(error.localizedDescription)"
         }
+    }
+
+    // ---------------------------------------------------------------- 设置也同步
+
+    /// 所有设置作为一条加密记录（settings:shared）随内容一起同步，以最后一次修改（updated_at）为准。
+    static let settingsID = "shared"
+
+    private var sharedSettings: JSONValue? { model.book.store.value(RecordType.settings, Self.settingsID) }
+
+    /// 本机设置比同步记录新（或还没有记录）：写进记录，下一轮同步带给其他设备。
+    public func publishSettings() {
+        guard enabled else { return }
+        let local = MailReminder.shared.syncedSettings
+        let localUpdated = local["updated_at"]?.int ?? 0
+        if let shared = sharedSettings, (shared["updated_at"]?.int ?? 0) >= localUpdated, shared == local { return }
+        if let shared = sharedSettings, (shared["updated_at"]?.int ?? 0) > localUpdated { return }
+        model.perform { try model.book.store.write([(RecordType.settings, Self.settingsID, local)]) }
+    }
+
+    /// 同步记录比本机新：照着改本机设置。
+    func adoptSettings() {
+        guard let shared = sharedSettings else { return }
+        MailReminder.shared.adoptSynced(shared)
     }
 
     // ---------------------------------------------------------------- 配对（发起端）

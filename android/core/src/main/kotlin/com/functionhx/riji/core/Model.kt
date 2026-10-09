@@ -16,6 +16,7 @@ object RecordType {
     const val DAY = "day"
     const val BLOCK = "block"
     const val PROGRESS = "progress"
+    const val SETTINGS = "settings"
 }
 
 private fun JsonValue?.textRuns(): List<JsonValue> = this?.array ?: emptyList()
@@ -62,6 +63,8 @@ data class Block(
     val carriedDays: Int get() = attrs["carried_days"]?.int ?: 0
     /** 被延续过来的任务删掉后，原块记为「放下了」，不再被带走。 */
     val dropped: Boolean get() = attrs["dropped"]?.bool ?: false
+    /** 没做完时要不要带到明天：单独选的 true / false，null 跟随总开关。 */
+    val carry: Boolean? get() = attrs["carry"]?.bool
     /** 明日目标 → 次日今日目标：目标块记 planned_to，次日的任务记 planned_from。 */
     val plannedTo: String? get() = attrs["planned_to"]?.string
     val plannedFrom: String? get() = attrs["planned_from"]?.string

@@ -134,10 +134,11 @@ final class ReminderCoordinator {
     private var lastSettings: [Int] = []
 
     private func settingsChanged() {
-        let settings = [ReminderSettings.enabled ? 1 : 0, ReminderSettings.minutes, ReminderSettings.dayStart]
+        let settings = [ReminderSettings.enabled ? 1 : 0, ReminderSettings.minutes, ReminderSettings.dayStart, ReminderSettings.carryByDefault ? 1 : 0]
         guard settings != lastSettings else { return }
         lastSettings = settings
         model.setDayStart(ReminderSettings.dayStart)
+        model.setCarryByDefault(ReminderSettings.carryByDefault)
         schedule()
     }
 
@@ -146,6 +147,7 @@ final class ReminderCoordinator {
         pending = Task { [model, sync] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
+            sync?.publishSettings()
             await sync?.sync()
             await MailReminder.shared.report(book: model.book, today: model.today,
                                              device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")

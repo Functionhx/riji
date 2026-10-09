@@ -135,6 +135,8 @@ public struct DayStats: Equatable, Sendable {
 public final class DailyBook: @unchecked Sendable {
     public let store: RecordStore
     public var clock: DayClock
+    /// 没做完的事默认是否带到明天（每件事可以单独选，见 Block.carry）。内核默认带，应用里由设置决定。
+    public var carryByDefault = true
 
     public init(store: RecordStore, clock: DayClock = DayClock()) {
         self.store = store
@@ -271,15 +273,26 @@ public final class DailyBook: @unchecked Sendable {
         return count
     }
 
+    // ---------------------------------------------------------------- 延续的选择
+
+    /// 这件事没做完时会不会带到明天。
+    public func willCarry(_ block: Block) -> Bool { block.carry ?? carryByDefault }
+
+    /// 单独选：带 / 不带（写成明确的 true / false，不再跟随总开关）。
+    public func setCarry(_ carry: Bool, of blockID: String) throws {
+        try setAttr("carry", .bool(carry), of: blockID)
+    }
+
     // ---------------------------------------------------------------- 晚间
 
     /// 一天收尾的情况：今日总结写了没有、明日目标定了几条、还有几件没做完（会自动延续）。
     public func evening(on date: String) -> Evening {
         let plans = items(.tomorrow, on: date).filter { !Self.normalized($0.text.plain).isEmpty }
-        let pending = items(.todo, on: date).filter { !$0.checked && $0.carriedTo == nil && !$0.dropped }
+        let open = items(.todo, on: date).filter { $0.kind == .check && !$0.checked && $0.carriedTo == nil && !$0.dropped }
+        let pending = open.filter(willCarry)
         return Evening(date: date, stats: stats(on: date),
                        hasSummary: !(day(date)?.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
-                       plans: plans.count, pending: pending.count)
+                       plans: plans.count, pending: pending.count, staying: open.count - pending.count)
     }
 
     /// 早上补写：昨天写过东西、却没写总结时返回昨天的日期。
@@ -322,7 +335,7 @@ public final class DailyBook: @unchecked Sendable {
     public func carryOver(into day: Day, now: Date = Date()) throws {
         guard let previous = days.first(where: { $0.date < day.date }), let target = section(.todo, of: day) else { return }
         let pending = section(.todo, of: previous).map(children(of:))?
-            .filter { $0.kind == .check && !$0.checked && $0.carriedTo == nil && !$0.dropped } ?? []
+            .filter { $0.kind == .check && !$0.checked && $0.carriedTo == nil && !$0.dropped && willCarry($0) } ?? []
         let plans = day.date < clock.key(for: now) ? [] : (section(.tomorrow, of: previous).map(children(of:)) ?? [])
             .filter { $0.kind == .check && $0.plannedTo == nil && !Self.normalized($0.text.plain).isEmpty }
         guard !pending.isEmpty || !plans.isEmpty else { return }
@@ -593,6 +606,8 @@ public struct Evening: Equatable, Sendable {
     public var plans: Int
     /// 没做完、明天会自动延续的件数
     public var pending: Int
+    /// 没做完、留在今天不带走的件数
+    public var staying: Int = 0
 
     public var isComplete: Bool { hasSummary && plans > 0 }
 

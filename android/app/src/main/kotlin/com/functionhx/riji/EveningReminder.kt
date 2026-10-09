@@ -47,6 +47,9 @@ class EveningReminder : BroadcastReceiver() {
         /** 一天的分界线（零点后的分钟数），默认凌晨 4 点。 */
         fun dayStart(context: Context) = context.getSharedPreferences("riji", 0).getInt("day_start", com.functionhx.riji.core.DayClock.SUGGESTED_DAY_START)
         fun saveDayStart(context: Context, minutes: Int) { context.getSharedPreferences("riji", 0).edit().putInt("day_start", minutes).apply() }
+        /** 没做完的事默认是否带到明天（每件事可以单独选），默认不带。 */
+        fun carryByDefault(context: Context) = context.getSharedPreferences("riji", 0).getBoolean("carry_default", false)
+        fun saveCarryByDefault(context: Context, carry: Boolean) { context.getSharedPreferences("riji", 0).edit().putBoolean("carry_default", carry).apply() }
 
         fun save(context: Context, on: Boolean, minutes: Int) {
             context.getSharedPreferences("riji", 0).edit().putBoolean(KEY_ON, on).putInt(KEY_MINUTES, minutes).apply()
@@ -78,6 +81,7 @@ class EveningReminder : BroadcastReceiver() {
             val device = context.getSharedPreferences("riji", 0).getString("device", null) ?: "android-reminder"
             val remote = ChangeLog(File(context.filesDir, "riji/remote-changes.jsonl"))
             val book = DailyBook(RecordStore(ChangeLog(file), device, remote), com.functionhx.riji.core.DayClock(dayStart = dayStart(context)))
+            book.carryByDefault = carryByDefault(context)
             return book.evening(book.clock.key(Instant.now()))
         }
 

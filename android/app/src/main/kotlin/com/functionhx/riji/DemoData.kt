@@ -21,7 +21,7 @@ object DemoData {
                 if (task != null) book.setChecked(true, task.id)
             }
         }
-        book.add(BlockKind.CHECK, "英语单词", SectionRole.TODO, yesterday, now = now)
+        book.add(BlockKind.CHECK, "英语单词", SectionRole.TODO, yesterday, now = now)?.let { book.setCarry(true, it.id) }
         for (text in listOf("徐涛马原", "高数 17 讲")) book.add(BlockKind.CHECK, text, SectionRole.TODO, yesterday, now = now)?.let { book.setChecked(true, it.id) }
         for (text in listOf("sony 继续", "文章便利贴功能", "参考文献必填")) book.add(BlockKind.SPARK, text, SectionRole.SPARK, yesterday, now = now)
         book.setNotes("感觉黑夜模式下更好看？", yesterday, now)

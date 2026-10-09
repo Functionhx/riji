@@ -239,6 +239,19 @@ struct TaskRow: View {
             if item.attrs["from_spark"] != nil {
                 Text("← Spark").font(Typeface.mono(10.5)).foregroundStyle(Ink.ink3)
             }
+            if !item.checked, !carriedAway, item.kind == .check {
+                let carry = model.book.willCarry(item)
+                Button { model.perform { try model.book.setCarry(!carry, of: item.id) } } label: {
+                    Text(carry ? "→ 明天" : "→")
+                        .font(Typeface.mono(10.5))
+                        .foregroundStyle(carry ? Ink.ochre : Ink.ink3.opacity(0.6))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(carry ? Ink.ochreSoft.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(carry ? "没做完会带到明天；点一下就不带" : "没做完不带到明天；点一下就带")
+            }
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
@@ -384,8 +397,8 @@ struct EveningCard: View {
                     .onSubmit(addDraft)
             }
             .padding(.vertical, 8)
-            if isToday, evening.pending > 0 {
-                Text("另有 \(evening.pending) 件没做完，会自动延续，不用再写一遍。")
+            if isToday, evening.pending + evening.staying > 0 {
+                Text(carryLine(evening))
                     .font(Typeface.body(12)).foregroundStyle(Ink.ink3)
                     .padding(.top, 2)
             }
@@ -428,6 +441,13 @@ struct EveningCard: View {
         #else
         label
         #endif
+    }
+
+    private func carryLine(_ evening: Evening) -> String {
+        var parts: [String] = []
+        if evening.pending > 0 { parts.append("\(evening.pending) 件没做完的会带到明天") }
+        if evening.staying > 0 { parts.append("\(evening.staying) 件留在今天") }
+        return parts.joined(separator: "，") + "（点任务右边的「→」选择）。"
     }
 
     private func load() {

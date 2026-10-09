@@ -12,6 +12,9 @@ public enum ReminderSettings {
     public static let dayStartKey = "riji.day.start"
     public static let defaultDayStart = DayClock.suggestedDayStart
     public static let dayStarts = [0, 120, 180, 240, 300]
+    /// 没做完的事默认是否带到明天（每件事可以单独选）。默认不带。
+    public static let carryKey = "riji.carry.default"
+    public static var carryByDefault: Bool { UserDefaults.standard.object(forKey: carryKey) as? Bool ?? false }
 
     public static var enabled: Bool {
         UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? defaultEnabled
@@ -79,6 +82,7 @@ public struct ReminderSettingsView: View {
     @AppStorage(MailReminder.recipientsKey) private var recipients = ""
     @AppStorage(MailReminder.delayKey) private var delay = 60
     @AppStorage(ReminderSettings.dayStartKey) private var dayStart = ReminderSettings.defaultDayStart
+    @AppStorage(ReminderSettings.carryKey) private var carryDefault = false
     @State private var token = ""
     @Environment(SyncController.self) private var sync: SyncController?
     private let mail = MailReminder.shared
@@ -93,10 +97,12 @@ public struct ReminderSettingsView: View {
                 Picker("一天结束于", selection: touched($dayStart)) {
                     ForEach(ReminderSettings.dayStarts, id: \.self) { Text(ReminderSettings.dayStartLabel($0)) }
                 }
+                Toggle("没做完的事自动带到明天", isOn: touched($carryDefault))
             } header: {
                 Text("一天")
             } footer: {
-                Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。")
+                Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。"
+                     + "每件事右边的「→ 明天」可以单独选带不带，优先于这个开关；明日目标总会排进明天。")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

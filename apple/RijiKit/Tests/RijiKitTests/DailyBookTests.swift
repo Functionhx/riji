@@ -136,6 +136,29 @@ struct DailyBookTests {
         #expect(book.stats(on: "2026-10-07").total == 0)
     }
 
+    @Test func eachTaskChoosesWhetherToCarry() throws {
+        let book = try makeBook()
+        book.carryByDefault = false
+        let keep = try book.add(.check, text: "sony 继续", to: .todo, on: "2026-10-07", now: monday)!
+        try book.add(.check, text: "随便看看", to: .todo, on: "2026-10-07", now: monday)
+        try book.setCarry(true, of: keep.id)
+        try book.add(.check, text: "写周报", to: .tomorrow, on: "2026-10-07", now: monday)
+        let evening = book.evening(on: "2026-10-07")
+        #expect(evening.pending == 1 && evening.staying == 1)
+        try book.ensureDay("2026-10-08", now: monday)
+        // 总开关关着：只带单独选了的，明日目标照旧排进来
+        #expect(book.items(.todo, on: "2026-10-08").map(\.text.plain) == ["写周报", "sony 继续"])
+        // 改了主意（打开总开关）：再打开 8 号时，7 号没单独选过的事也跟过来
+        book.carryByDefault = true
+        let skip = try book.add(.check, text: "今天的事", to: .todo, on: "2026-10-08", now: monday)!
+        #expect(book.items(.todo, on: "2026-10-08").map(\.text.plain) == ["写周报", "随便看看", "sony 继续", "今天的事"])
+        // 带过来的那条继续带（选择跟着走）；总开关开着时也可以单独不带
+        try book.setCarry(false, of: skip.id)
+        try book.ensureDay("2026-10-09", now: monday)
+        #expect(book.items(.todo, on: "2026-10-09").map(\.text.plain) == ["写周报", "随便看看", "sony 继续"])
+        #expect(book.items(.todo, on: "2026-10-08").first { $0.id == skip.id }?.carriedTo == nil)
+    }
+
     @Test func tomorrowGoalsBecomeNextDaysGoals() throws {
         let book = try makeBook()
         try book.add(.check, text: "sony 继续", to: .todo, on: "2026-10-07", now: monday)

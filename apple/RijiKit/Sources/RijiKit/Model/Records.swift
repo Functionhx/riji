@@ -113,6 +113,8 @@ public struct Block: Hashable, Sendable, Identifiable {
     public var carriedDays: Int { attrs["carried_days"]?.int ?? 0 }
     /// 被延续过来的任务删掉后，原块记为「放下了」，不再被带走。
     public var dropped: Bool { attrs["dropped"]?.bool ?? false }
+    /// 这件事没做完时要不要带到明天：true / false 是单独选的，nil 跟随总开关（DailyBook.carryByDefault）。
+    public var carry: Bool? { attrs["carry"]?.bool }
     /// 明日目标 → 次日今日目标：目标块记 `planned_to`，次日的任务记 `planned_from`。
     public var plannedTo: String? { attrs["planned_to"]?.string }
     public var plannedFrom: String? { attrs["planned_from"]?.string }

@@ -230,8 +230,19 @@ private fun TaskRow(model: RijiViewModel, item: Block) {
             Text(progress.target?.let { " ${progress.current}/$it" } ?: " ${progress.current} ${progress.unit}", style = mono(11.sp, ink.ink2))
         }
         if (item.attrs["from_spark"] != null) Text(" ← Spark", style = mono(10.5.sp, ink.ink3))
+        if (!item.checked && !carriedAway) {
+            val carry = model.willCarry(item)
+            Text(if (carry) "→ 明天" else "→", style = mono(11.sp, if (carry) ink.ochre else ink.ink3.copy(alpha = 0.6f)),
+                modifier = Modifier.padding(start = 6.dp)
+                    .background(if (carry) ink.ochreSoft.copy(alpha = 0.35f) else Color.Transparent, RoundedCornerShape(4.dp))
+                    .clickable { model.setCarry(item.id, !carry) }.padding(horizontal = 8.dp, vertical = 6.dp))
+        }
         DropdownMenu(menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("改写") }, onClick = { menu = false; editing = true })
+            if (!item.checked && !carriedAway) {
+                val carry = model.willCarry(item)
+                DropdownMenuItem(text = { Text(if (carry) "不带到明天" else "没做完就带到明天") }, onClick = { menu = false; model.setCarry(item.id, !carry) })
+            }
             DropdownMenuItem(text = { Text(if (item.carryFrom != null) "不做了（不再延续）" else "删除") }, onClick = { menu = false; model.delete(item.id) })
         }
     }
@@ -389,7 +400,13 @@ private fun EveningCard(model: RijiViewModel, date: String, isToday: Boolean) {
                 )
             }
         }
-        if (isToday && evening.pending > 0) Text("另有 ${evening.pending} 件没做完，会自动延续，不用再写一遍。", style = body(12.sp, ink.ink3))
+        if (isToday && evening.pending + evening.staying > 0) {
+            val parts = listOfNotNull(
+                evening.pending.takeIf { it > 0 }?.let { "$it 件没做完的会带到明天" },
+                evening.staying.takeIf { it > 0 }?.let { "$it 件留在今天" },
+            )
+            Text(parts.joinToString("，") + "（点任务右边的「→」选择）。", style = body(12.sp, ink.ink3))
+        }
         if (isToday) {
             Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 if (evening.missing.isNotEmpty()) Text("还差：" + evening.missing.joinToString(" · "), style = mono(11.sp, ink.ochre))
@@ -655,7 +672,12 @@ fun MeScreen(model: RijiViewModel) {
                         .clickable { model.changeDayStart(minutes) }.padding(horizontal = 12.dp, vertical = 7.dp))
             }
         }
-        Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。", style = body(13.sp, ink.ink3))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("没做完的事自动带到明天", style = body(14.5.sp, ink.ink), modifier = Modifier.weight(1f))
+            Switch(model.carryByDefault, { model.changeCarryByDefault(it) })
+        }
+        Text("分界线之前仍算前一天：零点后写的总结记在当天，明日目标与没做完的事也在分界线上才带到新的一天。" +
+            "每件事右边的「→ 明天」可以单独选带不带，优先于这个开关；明日目标总会排进明天。", style = body(13.sp, ink.ink3))
         Eyebrow("晚间提醒")
         val context = androidx.compose.ui.platform.LocalContext.current
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
