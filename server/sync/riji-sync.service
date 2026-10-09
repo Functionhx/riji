@@ -1,0 +1,32 @@
+[Unit]
+Description=Riji sync replica (encrypted segments + device pairing relay)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/bin/python3 /opt/riji-sync/sync.py
+EnvironmentFile=/etc/riji-reminder/env
+Environment=RIJI_SYNC_DB=/var/lib/riji-sync/sync.sqlite3
+Environment=RIJI_SYNC_HOST=127.0.0.1
+Environment=RIJI_SYNC_PORT=8792
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=riji-sync
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

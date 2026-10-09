@@ -22,6 +22,8 @@ data class DayStats(val total: Int, val done: Int, val carried: Int, val sparks:
 
 /** 每日层的全部规则。与 Swift 的 DailyBook 一一对应（同样的增量缓存）。 */
 class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
+    companion object { fun dayNoteId(date: String) = "day-$date" }
+
     private val lock = Any()
     private var cachedRevision = -1
     private var cachedDays: List<Day> = emptyList()
@@ -142,7 +144,8 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
 
     fun ensureDay(date: String, now: Instant = Instant.now()): Day {
         day(date)?.let { carryOver(it, now); return it }
-        val noteId = RecordId.make(now.toEpochMilli())
+        // 确定的 id：两台设备各自生成同一天时写的是同一组记录，同步后不会出现两页
+        val noteId = dayNoteId(date)
         val stamp = now.toString()
         val day = Day(date, clock.zone.id, noteId)
         val edits = mutableListOf<Triple<String, String, JsonValue?>>(
@@ -153,7 +156,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
         var order: String? = null
         for ((role, title) in listOf(SectionRole.TODO to "TODO", SectionRole.SPARK to "SPARK", SectionRole.NOTES to "随记", SectionRole.TOMORROW to "明日目标")) {
             order = OrderKey.after(order)
-            val section = Block.create(RecordId.make(now.toEpochMilli()), noteId, null, order, BlockKind.SECTION,
+            val section = Block.create("$noteId-${role.wire}", noteId, null, order, BlockKind.SECTION,
                 mapOf("role" to JsonValue.str(role.wire), "title" to JsonValue.str(title)), "", stamp)
             edits += Triple(RecordType.BLOCK, section.id, section.json())
         }
@@ -189,7 +192,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
         val carried = pending.map { original ->
             val attrs = original.attrs - "carried_to" - "planned_from" + mapOf(
                 "carry_from" to JsonValue.str(original.id), "carried_days" to JsonValue.num(original.carriedDays + gap))
-            original to original.copy(id = RecordId.make(now.toEpochMilli()), noteId = day.noteId, parentId = target.id, order = "",
+            original to original.copy(id = "carry-${original.id}-${day.date}", noteId = day.noteId, parentId = target.id, order = "",
                 attrs = attrs, createdAt = now.toString())
         }
         for ((original, copy) in carried) landed.putIfAbsent(normalized(original.text), copy.id)
@@ -200,7 +203,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
             val landedId = landed[key] ?: run {
                 val attrs = mutableMapOf<String, JsonValue>("checked" to JsonValue.Bool(false), "planned_from" to JsonValue.str(plan.id))
                 plan.attrs["progress_id"]?.let { attrs["progress_id"] = it }
-                val copy = Block.create(RecordId.make(now.toEpochMilli()), day.noteId, target.id, nextOrder(), BlockKind.CHECK, attrs, plan.text, now.toString())
+                val copy = Block.create("plan-${plan.id}", day.noteId, target.id, nextOrder(), BlockKind.CHECK, attrs, plan.text, now.toString())
                 planCopies += copy
                 landed[key] = copy.id
                 copy.id
@@ -246,7 +249,7 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
     private fun createSection(role: SectionRole, day: Day, now: Instant): Block {
         val titles = mapOf(SectionRole.TODO to "TODO", SectionRole.SPARK to "SPARK", SectionRole.NOTES to "随记", SectionRole.TOMORROW to "明日目标")
         val last = blocks(day.noteId).filter { it.parentId == null }.maxOfOrNull { it.order }
-        val section = Block.create(RecordId.make(now.toEpochMilli()), day.noteId, null, OrderKey.after(last), BlockKind.SECTION,
+        val section = Block.create("${day.noteId}-${role.wire}", day.noteId, null, OrderKey.after(last), BlockKind.SECTION,
             mapOf("role" to JsonValue.str(role.wire), "title" to JsonValue.str(titles.getValue(role))), "", now.toString())
         commit(listOf(Triple(RecordType.BLOCK, section.id, section.json())))
         return section
@@ -322,6 +325,46 @@ class DailyBook(val store: RecordStore, var clock: DayClock = DayClock()) {
     }
 
     fun updateProgress(progress: ProgressItem) { commit(listOf(Triple(RecordType.PROGRESS, progress.id, progress.json()))) }
+
+    // ---------------------------------------------------------------- 同步后的同日合并（与 Swift 的 reconcileDays 相同）
+
+    /** 旧版两台设备各自生成过同一天：把孤儿笔记的内容按区块角色挪进胜出的那一页，再删掉孤儿。结果是确定的。 */
+    fun reconcileDays(now: Instant = Instant.now()): Boolean {
+        val referenced = days.map { it.noteId }.toSet()
+        val orphans = store.values(RecordType.NOTE).filter { it["kind"]?.string == "day" && it["id"]?.string !in referenced }
+        var changed = false
+        for (note in orphans) {
+            val noteId = note["id"]?.string ?: continue
+            val target = dateOf(note)?.let(::day) ?: continue
+            val blocks = blocks(noteId)
+            val sections = blocks.filter { it.kind == BlockKind.SECTION }.associateBy { it.id }
+            val edits = mutableListOf<Triple<String, String, JsonValue?>>()
+            for (block in blocks) {
+                if (block.kind == BlockKind.SECTION) continue
+                val role = block.parentId?.let(sections::get)?.role ?: SectionRole.NOTES
+                val section = section(role, target) ?: createSection(role, target, now)
+                edits += Triple(RecordType.BLOCK, block.id, block.copy(noteId = target.noteId, parentId = section.id).json())
+            }
+            for (section in sections.values) edits += Triple(RecordType.BLOCK, section.id, null)
+            edits += Triple(RecordType.NOTE, noteId, null)
+            commit(edits)
+            changed = true
+        }
+        return changed
+    }
+
+    /** 孤儿笔记是哪一天的：新版 id 里就有日期；旧版从标题「10 月 9 日」和创建时间推出年份。 */
+    private fun dateOf(note: JsonValue): String? {
+        val id = note["id"]?.string ?: return null
+        if (id.startsWith("day-")) return id.removePrefix("day-")
+        val numbers = Regex("\\d+").findAll(note["title"]?.string ?: "").map { it.value.toInt() }.toList()
+        if (numbers.size != 2) return null
+        val created = note["created_at"]?.string?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return null
+        val year = created.atZone(clock.zone).year
+        return listOf(year - 1, year, year + 1).map { "%04d-%02d-%02d".format(it, numbers[0], numbers[1]) }
+            .filter { runCatching { java.time.LocalDate.parse(it) }.isSuccess }
+            .minByOrNull { kotlin.math.abs(java.time.LocalDate.parse(it).atStartOfDay(clock.zone).toInstant().epochSecond - created.epochSecond) }
+    }
 
     private fun normalized(text: String) = text.trim().lowercase()
 

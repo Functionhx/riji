@@ -3,6 +3,7 @@
 //
 //   node spec/reference/generate-vectors.mjs
 
+import { createECDH } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import {
   GENESIS_PREV,
@@ -11,11 +12,15 @@ import {
   compareHlc,
   deriveRijiKey,
   deriveSegmentKey,
+  ecdhShared,
   formatHlc,
   hex,
   materialize,
+  pairKeys,
+  pairTranscript,
   parseHlc,
   receiveHlc,
+  sealPairPayload,
   sealSegment,
   stateDigest,
   tickHlc,
@@ -170,3 +175,43 @@ await write("merge.json", {
 });
 
 console.log("test vectors written to spec/test-vectors/");
+
+// ---------------------------------------------------------------- 设备配对
+// 固定的私钥标量（只用于向量）；公钥由 node:crypto 算出，参考实现只用 WebCrypto。
+function keypair(dHex) {
+  const ecdh = createECDH("prime256v1");
+  ecdh.setPrivateKey(Buffer.from(dHex, "hex"));
+  const pub = ecdh.getPublicKey(); // 04‖x‖y
+  const b = (buf) => Buffer.from(buf).toString("base64url");
+  return { d: dHex, jwk: { d: b(Buffer.from(dHex, "hex")), x: b(pub.subarray(1, 33)), y: b(pub.subarray(33)) }, pub: b(pub) };
+}
+{
+  const a = keypair("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+  const b = keypair("519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464");
+  const code = "48213907";
+  const shared = await ecdhShared(a.jwk, Buffer.from(b.pub, "base64url"));
+  const transcript = await pairTranscript(code, a.pub, b.pub);
+  const { key, sas } = await pairKeys(shared, transcript);
+  const payload = { epoch: 0, key: Buffer.from(ROOT).toString("base64url"), token: "riji-example-token", settings: { day_start: 240, minutes: 1350 } };
+  const sealed = await sealPairPayload(key, code, payload, nonce(7));
+  // 中间人：服务器把 B 的公钥换成自己的 M —— A 算出的比对码与 B 的不同
+  const m = keypair("0f56db78ca460b055c500064824bed999a25aaf48ebb519ac201537b85479813");
+  const sharedAM = await ecdhShared(a.jwk, Buffer.from(m.pub, "base64url"));
+  const sasAM = (await pairKeys(sharedAM, await pairTranscript(code, a.pub, m.pub))).sas;
+  await write("pairing.json", {
+    description: "设备配对：ECDH(P-256) 的 x 坐标 → transcript = SHA-256(\"riji-pair|v1|<code>|<pubA>|<pubB>\") → HKDF 派生配对密钥与 6 位比对码 → AES-256-GCM 信封（AAD = \"riji-pair|v1|<code>\"，nonce‖密文‖tag）",
+    code,
+    a: { private_d_hex: a.d, public: a.pub },
+    b: { private_d_hex: b.d, public: b.pub },
+    shared_hex: hex(shared),
+    transcript_hex: hex(transcript),
+    pair_key_hex: hex(key),
+    sas,
+    payload,
+    payload_canonical: canonicalJson(payload),
+    nonce_hex: hex(nonce(7)),
+    sealed,
+    mitm: { m_private_d_hex: m.d, m_public: m.pub, sas_seen_by_a: sasAM },
+  });
+}
+

@@ -1,0 +1,33 @@
+{
+  "description": "设备配对：ECDH(P-256) 的 x 坐标 → transcript = SHA-256(\"riji-pair|v1|<code>|<pubA>|<pubB>\") → HKDF 派生配对密钥与 6 位比对码 → AES-256-GCM 信封（AAD = \"riji-pair|v1|<code>\"，nonce‖密文‖tag）",
+  "code": "48213907",
+  "a": {
+    "private_d_hex": "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+    "public": "BGD-1LolWp0xyWHrdMY1bWjASbiSO2H6bOZpYi5g8p-2eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+  },
+  "b": {
+    "private_d_hex": "519b423d715f8b581f4fa8ee59f4771a5b44c8130b4e3eacca54a56dda72b464",
+    "public": "BBzL6RwHX8f08DO_okjbj8zTVl3pS7-xLzxZ_0bCcb-DzkAUxogR-aIaH9ssDmET4G23ypO3QE543HzNXKiaTKk"
+  },
+  "shared_hex": "874cc88baf56772eba61b4ccb240ed93d96f2345b346d0e7f9d58a3a555535d0",
+  "transcript_hex": "7ac233dbdf0a496a50d45843ad7cef678c1c57f8884c4fdae84597ab77d17f4b",
+  "pair_key_hex": "b59e747b656708290fb200d99d1f783bc317f5eaa46a65aa29172f1aa106932c",
+  "sas": "837159",
+  "payload": {
+    "epoch": 0,
+    "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "token": "riji-example-token",
+    "settings": {
+      "day_start": 240,
+      "minutes": 1350
+    }
+  },
+  "payload_canonical": "{\"epoch\":0,\"key\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"settings\":{\"day_start\":240,\"minutes\":1350},\"token\":\"riji-example-token\"}",
+  "nonce_hex": "000000000000000000000007",
+  "sealed": "AAAAAAAAAAAAAAAHnhtx5S8rCIkARWC74y9jHt7w-e8QZeDRe27jjJdEWX5C-1A2xqadgqPrqO1q39BCczoaW6eYFoniEPSJYQjsyC3BgdRrvvZUn7gFUggq1-BZkjuF-pAaF_mnKAa_Ec8gdzX8JAM_f6LZ_R5OoOI2haUcrSWBEDkYw8UdJBQ_VO1GyryTF8DVm4RcfO1MxzWUCQ7Erj4aSIE",
+  "mitm": {
+    "m_private_d_hex": "0f56db78ca460b055c500064824bed999a25aaf48ebb519ac201537b85479813",
+    "m_public": "BOJm3f3BJmjbMNTKPo93SUMsQWBE8tK4wQvz1AEq7_qKv6hkBKLp_-Z9R8WH73qXp_RWuGO00Cz8aSiXOrWxyzk",
+    "sas_seen_by_a": "003242"
+  }
+}

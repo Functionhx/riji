@@ -221,3 +221,49 @@ export async function materialize(rijiKey, allSegments) {
 export function stateDigest(state) {
   return sha256Hex(encoder.encode(canonicalJson(state)));
 }
+
+// ---------------------------------------------------------------- 设备配对（P2）
+//
+// 已配对的设备（发起端 A）与新设备（加入端 B）各生成一对临时 P-256 密钥，经服务器交换公钥（未压缩
+// X9.63，65 字节，base64url）。共享秘密是 ECDH 的 x 坐标。两端用「配对码 + 双方公钥」做 transcript，
+// 派生配对密钥与 6 位安全比对码（SAS）；站长确认两边比对码一致后，A 用配对密钥把日迹密钥封装给 B。
+// 服务器只看到公钥与密文，替换公钥做中间人会让两边的比对码不一致。
+
+export async function ecdhShared(privateJwk, peerPublicRaw) {
+  const priv = await subtle.importKey("jwk", { kty: "EC", crv: "P-256", ...privateJwk }, { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+  const pub = await subtle.importKey("raw", peerPublicRaw, { name: "ECDH", namedCurve: "P-256" }, true, []);
+  return new Uint8Array(await subtle.deriveBits({ name: "ECDH", public: pub }, priv, 256));
+}
+
+export async function pairTranscript(code, pubA, pubB) {
+  return new Uint8Array(await subtle.digest("SHA-256", encoder.encode(`riji-pair|v1|${code}|${pubA}|${pubB}`)));
+}
+
+// → { key: 配对密钥（32 字节）, sas: "123456" }
+export async function pairKeys(shared, transcript) {
+  const key = await hkdf(shared, transcript, "functionhx:riji:pair:key:v1");
+  const sasBytes = await hkdf(shared, transcript, "functionhx:riji:pair:sas:v1", 4);
+  const number = ((sasBytes[0] << 24) | (sasBytes[1] << 16) | (sasBytes[2] << 8) | sasBytes[3]) >>> 0;
+  return { key, sas: String(number % 1000000).padStart(6, "0") };
+}
+
+export function pairAad(code) {
+  return encoder.encode(`riji-pair|v1|${code}`);
+}
+
+// 配对信封：规范 JSON 的载荷（日迹密钥、epoch、连接码与设置）用 AES-256-GCM 加密，nonce‖密文‖tag 的 base64url。
+export async function sealPairPayload(pairKey, code, payload, nonce) {
+  const key = await subtle.importKey("raw", pairKey, "AES-GCM", false, ["encrypt"]);
+  const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: pairAad(code) }, key, encoder.encode(canonicalJson(payload))));
+  const out = new Uint8Array(nonce.length + ct.length);
+  out.set(nonce);
+  out.set(ct, nonce.length);
+  return b64u(out);
+}
+
+export async function openPairPayload(pairKey, code, sealed) {
+  const raw = fromB64u(sealed);
+  const key = await subtle.importKey("raw", pairKey, "AES-GCM", false, ["decrypt"]);
+  const plain = await subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: pairAad(code) }, key, raw.slice(12));
+  return JSON.parse(decoder.decode(plain));
+}

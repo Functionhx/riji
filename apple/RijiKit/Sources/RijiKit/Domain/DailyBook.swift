@@ -297,7 +297,8 @@ public final class DailyBook: @unchecked Sendable {
             try carryOver(into: existing, now: now)
             return existing
         }
-        let noteID = RecordID.make(now: now)
+        // 确定的 id：两台设备各自生成同一天时写的是同一组记录，同步后不会出现两页
+        let noteID = Self.dayNoteID(date)
         let note = Note(id: noteID, kind: .day, title: clock.title(for: date), createdAt: now, updatedAt: now)
         let day = Day(date: date, timeZone: clock.timeZone.identifier, noteID: noteID)
         var edits: [(type: String, id: String, value: JSONValue?)] = [
@@ -306,7 +307,7 @@ public final class DailyBook: @unchecked Sendable {
         var order: String? = nil
         for (role, title) in [(Block.SectionRole.todo, "TODO"), (.spark, "SPARK"), (.notes, "随记"), (.tomorrow, "明日目标")] {
             order = OrderKey.after(order)
-            let section = Block(id: RecordID.make(now: now), noteID: noteID, parentID: nil, order: order!, kind: .section,
+            let section = Block(id: "\(noteID)-\(role.rawValue)", noteID: noteID, parentID: nil, order: order!, kind: .section,
                                 attrs: ["role": .string(role.rawValue), "title": .string(title)], createdAt: now)
             edits.append((RecordType.block, section.id, section.json))
         }
@@ -348,7 +349,7 @@ public final class DailyBook: @unchecked Sendable {
             attrs["carried_days"] = .number(Double(original.carriedDays + gap))
             attrs["carried_to"] = nil
             attrs["planned_from"] = nil
-            let copy = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: target.id, order: "",
+            let copy = Block(id: "carry-\(original.id)-\(day.date)", noteID: day.noteID, parentID: target.id, order: "",
                              kind: .check, attrs: attrs, text: original.text, createdAt: now)
             carriedCopies.append((Self.normalized(original.text.plain), copy, original))
         }
@@ -363,7 +364,7 @@ public final class DailyBook: @unchecked Sendable {
             } else {
                 var attrs: [String: JSONValue] = ["checked": false, "planned_from": .string(plan.id)]
                 attrs["progress_id"] = plan.attrs["progress_id"]
-                let copy = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: target.id, order: nextOrder(),
+                let copy = Block(id: "plan-\(plan.id)", noteID: day.noteID, parentID: target.id, order: nextOrder(),
                                  kind: .check, attrs: attrs, text: plan.text, createdAt: now)
                 planCopies.append(copy)
                 landed[key] = copy.id
@@ -422,7 +423,7 @@ public final class DailyBook: @unchecked Sendable {
     private func createSection(_ role: Block.SectionRole, of day: Day, now: Date) throws -> Block? {
         let titles: [Block.SectionRole: String] = [.todo: "TODO", .spark: "SPARK", .notes: "随记", .tomorrow: "明日目标"]
         let last = blocks(note: day.noteID).filter { $0.parentID == nil }.map(\.order).max()
-        let section = Block(id: RecordID.make(now: now), noteID: day.noteID, parentID: nil, order: OrderKey.after(last), kind: .section,
+        let section = Block(id: "\(day.noteID)-\(role.rawValue)", noteID: day.noteID, parentID: nil, order: OrderKey.after(last), kind: .section,
                             attrs: ["role": .string(role.rawValue), "title": .string(titles[role] ?? role.rawValue)], createdAt: now)
         try commit([(RecordType.block, section.id, section.json)])
         return section
@@ -517,6 +518,51 @@ public final class DailyBook: @unchecked Sendable {
 
     public func updateProgress(_ progress: ProgressItem) throws {
         try commit([(RecordType.progress, progress.id, progress.json)])
+    }
+
+    // ---------------------------------------------------------------- 同步后的同日合并
+
+    public static func dayNoteID(_ date: String) -> String { "day-\(date)" }
+
+    /// 同步之前两台设备各自生成过同一天（旧版用随机 id）：合并后 Day 记录只剩一份，另一份笔记成了孤儿。
+    /// 把孤儿笔记里的内容按区块角色挪进胜出的那一页，再删掉孤儿的区块与笔记。结果是确定的：
+    /// 两台设备同时做这件事，写出的是同样的记录。返回是否改动了什么。
+    @discardableResult
+    public func reconcileDays(now: Date = Date()) throws -> Bool {
+        let referenced = Set(days.map(\.noteID))
+        let orphans = store.values(RecordType.note).compactMap(Note.init(json:))
+            .filter { $0.kind == .day && !referenced.contains($0.id) }
+        var changed = false
+        for note in orphans {
+            guard let date = dateOf(note), let target = day(date) else { continue }
+            let blocks = blocks(note: note.id)
+            let sections = Dictionary(blocks.filter { $0.kind == .section }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            var edits: [(type: String, id: String, value: JSONValue?)] = []
+            for block in blocks where block.kind != .section {
+                let role = block.parentID.flatMap { sections[$0] }?.role ?? .notes
+                guard let section = try section(role, of: target) ?? createSection(role, of: target, now: now) else { continue }
+                var moved = block
+                moved.noteID = target.noteID
+                moved.parentID = section.id
+                edits.append((RecordType.block, moved.id, moved.json))
+            }
+            for section in sections.values { edits.append((RecordType.block, section.id, nil)) }
+            edits.append((RecordType.note, note.id, nil))
+            try commit(edits)
+            changed = true
+        }
+        return changed
+    }
+
+    /// 孤儿笔记是哪一天的：新版 id 里就有日期；旧版从标题「10 月 9 日」和创建时间推出年份。
+    private func dateOf(_ note: Note) -> String? {
+        if note.id.hasPrefix("day-") { return String(note.id.dropFirst(4)) }
+        let numbers = note.title.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard numbers.count == 2 else { return nil }
+        let created = clock.calendar.dateComponents([.year], from: note.createdAt).year ?? 2026
+        let candidates = [created - 1, created, created + 1].map { String(format: "%04d-%02d-%02d", $0, numbers[0], numbers[1]) }
+        return candidates.min { abs(clock.date(for: $0)?.timeIntervalSince(note.createdAt) ?? .infinity)
+            < abs(clock.date(for: $1)?.timeIntervalSince(note.createdAt) ?? .infinity) }
     }
 
     // ---------------------------------------------------------------- 内部

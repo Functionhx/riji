@@ -91,4 +91,30 @@ class VectorTest {
             assertEquals(scenario["expected_state_digest"]!!.string, result.digest(), label)
         }
     }
+
+    @Test fun pairing() {
+        val v = vector("pairing.json")
+        val code = v["code"]!!.string!!
+        val a = Pairing.fromScalar(v["a"]!!["private_d_hex"]!!.string!!.hexToBytes())
+        val b = Pairing.fromScalar(v["b"]!!["private_d_hex"]!!.string!!.hexToBytes())
+        assertEquals(v["a"]!!["public"]!!.string, a.publicKey)
+        assertEquals(v["b"]!!["public"]!!.string, b.publicKey)
+        val sharedA = Pairing.shared(a, b.publicKey)
+        val sharedB = Pairing.shared(b, a.publicKey)
+        assertEquals(v["shared_hex"]!!.string, sharedA.toHex())
+        assertEquals(sharedA.toHex(), sharedB.toHex())
+        val transcript = Pairing.transcript(code, a.publicKey, b.publicKey)
+        assertEquals(v["transcript_hex"]!!.string, transcript.toHex())
+        val (key, sas) = Pairing.keys(sharedB, transcript)
+        assertEquals(v["pair_key_hex"]!!.string, key.toHex())
+        assertEquals(v["sas"]!!.string, sas)
+        assertEquals(v["sealed"]!!.string, Pairing.seal(key, code, v["payload"]!!, v["nonce_hex"]!!.string!!.hexToBytes()))
+        assertEquals(v["payload"]!!.canonical(), Pairing.open(key, code, v["sealed"]!!.string!!).canonical())
+        assertFailsWith<Pairing.BadEnvelope> { Pairing.open(key, "00000000", v["sealed"]!!.string!!) }
+        val m = Pairing.fromScalar(v["mitm"]!!["m_private_d_hex"]!!.string!!.hexToBytes())
+        assertEquals(v["mitm"]!!["sas_seen_by_a"]!!.string, Pairing.keys(Pairing.shared(a, m.publicKey), Pairing.transcript(code, a.publicKey, m.publicKey)).second)
+        // 随机生成的密钥对也能互通
+        val x = Pairing.generate(); val y = Pairing.generate()
+        assertEquals(Pairing.shared(x, y.publicKey).toHex(), Pairing.shared(y, x.publicKey).toHex())
+    }
 }

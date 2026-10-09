@@ -182,7 +182,14 @@ class ChangeLog(val file: File) {
 }
 
 /** 合并后的全部记录 + 写入接口。 */
-class RecordStore(private val log: ChangeLog?, device: String, wall: () -> Long = System::currentTimeMillis) {
+class RecordStore(
+    /** 本机写入的变更（同步时封装成本设备的段） */
+    val log: ChangeLog?,
+    device: String,
+    /** 从其他设备拉回、解密后的变更；启动时与本机日志一起合并 */
+    val remoteLog: ChangeLog? = null,
+    wall: () -> Long = System::currentTimeMillis,
+) {
     private val state = mutableMapOf<String, RecordState>()
     private val byType = mutableMapOf<String, MutableMap<String, RecordState>>()
     val clock: HlcClock
@@ -190,13 +197,14 @@ class RecordStore(private val log: ChangeLog?, device: String, wall: () -> Long 
         private set
 
     init {
-        val changes = log?.readAll() ?: emptyList()
+        val changes = listOfNotNull(log, remoteLog).flatMap { it.readAll() }
         Merge.apply(changes, state)
         for ((key, record) in state) byType.getOrPut(key.substringBefore(':')) { mutableMapOf() }[key.substringAfter(':')] = record
         clock = HlcClock(device, changes.maxOfOrNull { it.hlc }, wall)
     }
 
     val size: Int @Synchronized get() = state.size
+    @Synchronized fun snapshot(): Map<String, RecordState> = state.toMap()
 
     @Synchronized fun value(type: String, id: String): JsonValue? = state["$type:$id"]?.takeIf { !it.deleted }?.value
     @Synchronized fun values(type: String): List<JsonValue> = byType[type]?.values?.mapNotNull { if (it.deleted) null else it.value } ?: emptyList()
@@ -209,7 +217,9 @@ class RecordStore(private val log: ChangeLog?, device: String, wall: () -> Long 
         return changes
     }
 
+    /** 合并来自其他设备的变更（同步拉回时用），并记进远端日志，重启后仍在。 */
     @Synchronized fun absorb(changes: List<Change>) {
+        remoteLog?.append(changes)
         Merge.apply(changes, state)
         index(changes)
         changes.maxOfOrNull { it.hlc }?.let(clock::observe)

@@ -7,8 +7,9 @@ on:
 permissions:
   contents: read
 jobs:
-  reminder:
+  services:
     runs-on: ubuntu-22.04  # 与腾讯云同为 Python 3.10
     steps:
       - uses: actions/checkout@v4
       - run: python3 -m unittest server/reminder/test_reminder.py -v
+      - run: python3 -m unittest server/sync/test_sync.py -v

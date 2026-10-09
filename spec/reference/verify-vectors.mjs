@@ -12,10 +12,14 @@ import {
   compareHlc,
   deriveRijiKey,
   deriveSegmentKey,
+  ecdhShared,
   formatHlc,
   hex,
   materialize,
+  openPairPayload,
   openSegment,
+  pairKeys,
+  pairTranscript,
   parseHlc,
   receiveHlc,
   stateDigest,
@@ -71,11 +75,32 @@ for (const scenario of merge.scenarios) {
   assert.equal(stateDigest(state), scenario.expected_state_digest, scenario.name);
 }
 
+const pairing = await load("pairing.json");
+{
+  // 只用私钥标量与对方公钥复算（JWK 需要的 x / y 从对方视角取自己的公钥）
+  const jwkOf = (dHex, pub) => {
+    const raw = Buffer.from(pub, "base64url");
+    return { d: Buffer.from(dHex, "hex").toString("base64url"), x: raw.subarray(1, 33).toString("base64url"), y: raw.subarray(33).toString("base64url") };
+  };
+  const sharedA = await ecdhShared(jwkOf(pairing.a.private_d_hex, pairing.a.public), Buffer.from(pairing.b.public, "base64url"));
+  const sharedB = await ecdhShared(jwkOf(pairing.b.private_d_hex, pairing.b.public), Buffer.from(pairing.a.public, "base64url"));
+  assert.equal(hex(sharedA), pairing.shared_hex);
+  assert.equal(hex(sharedB), pairing.shared_hex);
+  const transcript = await pairTranscript(pairing.code, pairing.a.public, pairing.b.public);
+  assert.equal(hex(transcript), pairing.transcript_hex);
+  const { key, sas } = await pairKeys(sharedB, transcript);
+  assert.equal(hex(key), pairing.pair_key_hex);
+  assert.equal(sas, pairing.sas);
+  assert.deepEqual(await openPairPayload(key, pairing.code, pairing.sealed), pairing.payload);
+  await assert.rejects(openPairPayload(key, "00000000", pairing.sealed));
+  assert.notEqual(pairing.mitm.sas_seen_by_a, pairing.sas);
+}
+
 // 生成器是确定的：重新生成后向量文件逐字节不变。
-const names = ["canonical-json.json", "hlc.json", "kdf.json", "segments.json", "merge.json"];
+const names = ["canonical-json.json", "hlc.json", "kdf.json", "segments.json", "merge.json", "pairing.json"];
 const before = await Promise.all(names.map((name) => readFile(new URL(`../test-vectors/${name}`, import.meta.url), "utf8")));
 execFileSync(process.execPath, [new URL("./generate-vectors.mjs", import.meta.url).pathname], { stdio: "ignore" });
 const after = await Promise.all(names.map((name) => readFile(new URL(`../test-vectors/${name}`, import.meta.url), "utf8")));
 names.forEach((name, i) => assert.equal(after[i], before[i], `regenerating ${name} changed it`));
 
-console.log("riji spec vectors verified: canonical JSON, HLC, key derivation, segments, tamper detection, merge scenarios, determinism.");
+console.log("riji spec vectors verified: canonical JSON, HLC, key derivation, segments, tamper detection, merge scenarios, pairing, determinism.");

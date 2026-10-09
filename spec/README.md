@@ -18,5 +18,4 @@ node spec/reference/verify-vectors.mjs
 | `kdf.json` | 根密钥 → 日迹密钥（按 epoch）→ 段密钥 |
 | `segments.json` | 段封装、哈希链、篡改 / 改头 / 换设备必须解密失败 |
 | `merge.json` | 按序、乱序 + 重复、缺段（gap）、链被改（broken_chain）、平局按设备 id、删除墓碑 |
-
-设备配对（ECDH + 安全比对码）的向量在 P2 加入。
+| `pairing.json` | 设备配对：ECDH(P-256) 共享秘密、transcript、配对密钥、6 位比对码、配对信封、中间人比对码不同 |

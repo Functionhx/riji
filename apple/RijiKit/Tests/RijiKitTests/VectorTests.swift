@@ -127,4 +127,31 @@ struct VectorTests {
             #expect(try result.digest() == scenario["expected_state_digest"]!.string!, "\(label)")
         }
     }
+
+    @Test func pairing() throws {
+        let v = try vector("pairing.json")
+        let code = v["code"]!.string!
+        let a = try Pairing.KeyPair(privateScalar: hexData(v["a"]!["private_d_hex"]!.string!))
+        let b = try Pairing.KeyPair(privateScalar: hexData(v["b"]!["private_d_hex"]!.string!))
+        #expect(a.publicKey == v["a"]!["public"]!.string!)
+        #expect(b.publicKey == v["b"]!["public"]!.string!)
+        let sharedA = try Pairing.shared(a, peer: b.publicKey)
+        let sharedB = try Pairing.shared(b, peer: a.publicKey)
+        #expect(sharedA == sharedB)
+        #expect(sharedA.map { String(format: "%02x", $0) }.joined() == v["shared_hex"]!.string!)
+        let transcript = Pairing.transcript(code: code, initiator: a.publicKey, joiner: b.publicKey)
+        #expect(transcript.map { String(format: "%02x", $0) }.joined() == v["transcript_hex"]!.string!)
+        let (key, sas) = Pairing.keys(shared: sharedB, transcript: transcript)
+        #expect(keyHex(key) == v["pair_key_hex"]!.string!)
+        #expect(sas == v["sas"]!.string!)
+        // 同样的 nonce 封装出同样的信封；也能解开参考实现的信封
+        #expect(try Pairing.seal(key: key, code: code, payload: v["payload"]!, nonce: hexData(v["nonce_hex"]!.string!)) == v["sealed"]!.string!)
+        #expect(try Pairing.open(key: key, code: code, sealed: v["sealed"]!.string!) == v["payload"]!)
+        #expect(throws: Pairing.PairingError.badEnvelope) { try Pairing.open(key: key, code: "00000000", sealed: v["sealed"]!.string!) }
+        // 中间人看到的比对码不同
+        let m = try Pairing.KeyPair(privateScalar: hexData(v["mitm"]!["m_private_d_hex"]!.string!))
+        let sasAM = Pairing.keys(shared: try Pairing.shared(a, peer: m.publicKey),
+                                 transcript: Pairing.transcript(code: code, initiator: a.publicKey, joiner: m.publicKey)).sas
+        #expect(sasAM == v["mitm"]!["sas_seen_by_a"]!.string!)
+    }
 }

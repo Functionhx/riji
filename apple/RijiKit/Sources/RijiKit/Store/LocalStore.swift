@@ -58,18 +58,23 @@ public final class RecordStore: @unchecked Sendable {
     /// 每次写入或合并加一；上层用它判断缓存是否过期。
     public private(set) var revision = 0
     public let clock: HLCClock
-    private let log: ChangeLog?
+    /// 本机写入的变更（同步时封装成本设备的段）
+    public let log: ChangeLog?
+    /// 从其他设备拉回、解密后的变更；启动时与本机日志一起合并
+    public let remoteLog: ChangeLog?
     private let lock = NSLock()
 
     /// `log == nil` 时只在内存里（预览与测试）。
-    public init(log: ChangeLog?, device: String, wall: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+    public init(log: ChangeLog?, remoteLog: ChangeLog? = nil, device: String,
+                wall: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
         self.log = log
+        self.remoteLog = remoteLog
         var state: [String: RecordState] = [:]
         var latest: HLC?
-        if let log {
-            let changes = try log.readAll()
+        for source in [log, remoteLog].compactMap({ $0 }) {
+            let changes = try source.readAll()
             Merge.apply(changes, to: &state)
-            latest = changes.map(\.hlc).max()
+            if let newest = changes.map(\.hlc).max() { latest = max(latest ?? newest, newest) }
         }
         self.state = state
         for (key, record) in state {
@@ -111,8 +116,9 @@ public final class RecordStore: @unchecked Sendable {
         return changes
     }
 
-    /// 合并来自其他设备的变更（同步拉回时用）。
-    public func absorb(_ changes: [Change]) {
+    /// 合并来自其他设备的变更（同步拉回时用），并记进远端日志，重启后仍在。
+    public func absorb(_ changes: [Change]) throws {
+        try remoteLog?.append(changes)
         lock.lock()
         Merge.apply(changes, to: &state)
         index(changes)
