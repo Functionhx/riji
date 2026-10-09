@@ -30,12 +30,16 @@ struct DailyBookTests {
         #expect(DayClock().key(for: night) == "2026-10-09")
         #expect(clock.key(for: night) == "2026-10-08")             // 凌晨 4 点前还是 8 号
         #expect(clock.key(for: night.addingTimeInterval(90 * 60)) == "2026-10-09")  // 04:00 翻页
-        #expect(clock.minutesLeft(at: night) == 90)
-        #expect(clock.dayProgress(at: night) > 0.9 && clock.dayProgress(at: night) < 1)
+        // 显示仍按零点：零点已过，「今天还剩」是 0，墨线走到头
+        #expect(clock.minutesLeft(at: night) == 0 && clock.isPastMidnight(at: night))
+        #expect(clock.dayProgress(at: night) == 1)
+        let evening = night.addingTimeInterval(-4 * 3600)  // 8 号 22:30
+        #expect(clock.minutesLeft(at: evening) == 90 && !clock.isPastMidnight(at: evening))
         // 00:30 的提醒属于 8 号的深夜；22:30 在墨线上的位置
         #expect(clock.instant(minutes: 30, on: "2026-10-08") == Date(timeIntervalSince1970: 1_791_477_000))
         #expect(clock.instant(minutes: 22 * 60 + 30, on: "2026-10-08") == Date(timeIntervalSince1970: 1_791_469_800))
-        #expect(abs(clock.inkPosition(minutes: 22 * 60 + 30) - 990.0 / 1320.0) < 1e-9)
+        #expect(abs(clock.inkPosition(minutes: 22 * 60 + 30) - 990.0 / 1080.0) < 1e-9)
+        #expect(clock.inkPosition(minutes: 30) == 1)
         #expect(abs(DayClock().inkPosition(minutes: 22 * 60 + 30) - 990.0 / 1080.0) < 1e-9)
     }
 

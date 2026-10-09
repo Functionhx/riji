@@ -64,26 +64,30 @@ public struct DayClock: Sendable {
         return midnight.addingTimeInterval(Double((minutes < dayStart ? minutes + 1440 : minutes) * 60))
     }
 
-    /// 墨线从 06:00 画到这一天结束（分界线）。
-    public var inkMinutes: Int { 1440 + dayStart - 360 }
+    // 显示上仍按零点：墨线画 06:00–24:00，「今天还剩」倒数到零点。分界线只决定内容记在哪一天。
 
-    /// 某个时刻在墨线上的位置，0…1。
+    /// 某个时刻在墨线（06:00–24:00）上的位置，0…1；零点后的时刻停在终点。
     public func inkPosition(minutes: Int) -> Double {
         let offset = (minutes < dayStart ? minutes + 1440 : minutes) - 360
-        return min(1, max(0, Double(offset) / Double(inkMinutes)))
+        return min(1, max(0, Double(offset) / 1080))
     }
 
-    /// 今天 06:00 到分界线过去了多少（墨线用），0…1。
+    /// 今天 06:00–24:00 过去了多少（墨线用），0…1。
     public func dayProgress(at now: Date) -> Double {
         guard let start = instant(minutes: 360, on: key(for: now)) else { return 0 }
-        return min(1, max(0, now.timeIntervalSince(start) / Double(inkMinutes * 60)))
+        return min(1, max(0, now.timeIntervalSince(start) / (18 * 3600)))
     }
 
-    /// 距离今天结束（分界线）还有多少分钟。
+    /// 距离今天的零点还有多少分钟；零点后（分界线之前）是 0。
     public func minutesLeft(at now: Date) -> Int {
         guard let midnight = date(for: key(for: now)) else { return 0 }
-        let end = midnight.addingTimeInterval(Double((1440 + dayStart) * 60))
-        return max(0, Int(end.timeIntervalSince(now) / 60))
+        return max(0, Int(midnight.addingTimeInterval(86400).timeIntervalSince(now) / 60))
+    }
+
+    /// 已经过了零点、还没到分界线（仍算前一天的深夜）。
+    public func isPastMidnight(at now: Date) -> Bool {
+        guard let midnight = date(for: key(for: now)) else { return false }
+        return now >= midnight.addingTimeInterval(86400)
     }
 
     /// 「04:00」

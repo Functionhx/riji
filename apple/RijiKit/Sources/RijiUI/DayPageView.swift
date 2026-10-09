@@ -24,7 +24,7 @@ public struct DayPageView: View {
                         BackfillBanner(date: missed) { dismissedBackfill = missed }.padding(.top, 16)
                     }
                     InkLine(progress: clock.dayProgress(at: model.currentDate), now: model.currentDate, timeZone: clock.timeZone,
-                            end: clock.dayStart, reminder: reminderOn ? clock.inkPosition(minutes: reminderMinutes) : nil)
+                            reminder: reminderOn ? clock.inkPosition(minutes: reminderMinutes) : nil)
                         .padding(.top, 18)
                 }
                 TodoSection(date: date, isToday: isToday, stats: stats).padding(.top, 30)
@@ -68,6 +68,9 @@ public struct DayPageView: View {
             let gap = clock.daysBetween(date, model.today)
             return gap > 0 ? "\(weekday) · \(gap) 天前" : weekday
         }
+        if clock.isPastMidnight(at: model.currentDate) {
+            return "\(weekday) · 已过零点，\(DayClock.label(clock.dayStart)) 前写的仍记在今天"
+        }
         let minutes = clock.minutesLeft(at: model.currentDate)
         return "\(weekday) · 今天还剩 \(minutes / 60) 小时 \(minutes % 60) 分"
     }
@@ -77,13 +80,11 @@ public struct DayPageView: View {
     }
 }
 
-/// 墨线：06:00 到一天的分界线（默认次日 04:00）的进度，赭色圆点是「现在」。
+/// 墨线：06:00–24:00 的进度，赭色圆点是「现在」。
 struct InkLine: View {
     var progress: Double
     var now: Date
     var timeZone: TimeZone
-    /// 一天的分界线（墨线的终点）
-    var end: Int = 0
     /// 晚间提醒在墨线上的位置（0…1），画一道赭色短刻度。
     var reminder: Double? = nil
 
@@ -111,7 +112,7 @@ struct InkLine: View {
                 Spacer()
                 Text("现在 \(timeText)")
                 Spacer()
-                Text(DayClock.label(end == 0 ? 1440 : end))
+                Text("24:00")
             }
             .font(Typeface.mono(10.5))
             .foregroundStyle(Ink.ink3)

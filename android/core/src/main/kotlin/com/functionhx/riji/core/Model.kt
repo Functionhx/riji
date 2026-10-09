@@ -239,21 +239,24 @@ class DayClock(zoneId: String = DEFAULT_ZONE, dayStart: Int = 0) {
     fun instant(minutes: Int, key: String): Instant =
         LocalDate.parse(key).atStartOfDay(zone).plusMinutes((if (minutes < dayStart) minutes + 1440 else minutes).toLong()).toInstant()
 
-    /** 墨线从 06:00 画到这一天结束（分界线）。 */
-    val inkMinutes: Int get() = 1440 + dayStart - 360
+    // 显示上仍按零点：墨线画 06:00–24:00，「今天还剩」倒数到零点。分界线只决定内容记在哪一天。
 
     fun inkPosition(minutes: Int): Double =
-        (((if (minutes < dayStart) minutes + 1440 else minutes) - 360).toDouble() / inkMinutes).coerceIn(0.0, 1.0)
+        (((if (minutes < dayStart) minutes + 1440 else minutes) - 360) / 1080.0).coerceIn(0.0, 1.0)
 
     fun dayProgress(now: Instant): Double {
         val start = instant(360, key(now))
-        return ((now.epochSecond - start.epochSecond) / (inkMinutes * 60.0)).coerceIn(0.0, 1.0)
+        return ((now.epochSecond - start.epochSecond) / (18.0 * 3600)).coerceIn(0.0, 1.0)
     }
 
+    /** 距离今天的零点还有多少分钟；零点后（分界线之前）是 0。 */
     fun minutesLeft(now: Instant): Int {
-        val end: ZonedDateTime = LocalDate.parse(key(now)).atStartOfDay(zone).plusMinutes((1440 + dayStart).toLong())
+        val end: ZonedDateTime = LocalDate.parse(key(now)).plusDays(1).atStartOfDay(zone)
         return maxOf(0, ((end.toEpochSecond() - now.epochSecond) / 60).toInt())
     }
+
+    /** 已经过了零点、还没到分界线（仍算前一天的深夜）。 */
+    fun isPastMidnight(now: Instant): Boolean = !now.isBefore(LocalDate.parse(key(now)).plusDays(1).atStartOfDay(zone).toInstant())
 
     companion object {
         const val DEFAULT_ZONE = "Asia/Shanghai"

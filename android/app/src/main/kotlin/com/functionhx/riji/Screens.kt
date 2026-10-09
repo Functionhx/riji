@@ -131,7 +131,9 @@ fun TodayScreen(model: RijiViewModel, date: String) {
                 Spacer(Modifier.height(6.dp))
                 Text(clock.title(date), style = serif(40.sp, ink.ink))
                 val now = Instant.now()
-                val subtitle = if (isToday) {
+                val subtitle = if (isToday && clock.isPastMidnight(now)) {
+                    "${clock.weekday(date)} · 已过零点，${com.functionhx.riji.core.DayClock.label(clock.dayStart)} 前写的仍记在今天"
+                } else if (isToday) {
                     val minutes = clock.minutesLeft(now)
                     "${clock.weekday(date)} · 今天还剩 ${minutes / 60} 小时 ${minutes % 60} 分"
                 } else clock.weekday(date)
@@ -141,7 +143,6 @@ fun TodayScreen(model: RijiViewModel, date: String) {
                         BackfillBanner(clock.title(missed), onOpen = { model.open(missed) }, onDismiss = { dismissedBackfill = missed })
                     }
                     InkLine(clock.dayProgress(now), ZonedDateTime.now(clock.zone).format(DateTimeFormatter.ofPattern("HH:mm")),
-                        com.functionhx.riji.core.DayClock.label(if (clock.dayStart == 0) 1440 else clock.dayStart),
                         if (model.reminderOn) clock.inkPosition(model.reminderMinutes) else null)
                 }
             }
@@ -160,7 +161,7 @@ fun TodayScreen(model: RijiViewModel, date: String) {
 }
 
 @Composable
-private fun InkLine(progress: Double, now: String, end: String, reminder: Double?) {
+private fun InkLine(progress: Double, now: String, reminder: Double?) {
     val ink = LocalInk.current
     Column(Modifier.padding(top = 16.dp)) {
         Canvas(Modifier.fillMaxWidth().height(10.dp)) {
@@ -177,7 +178,7 @@ private fun InkLine(progress: Double, now: String, end: String, reminder: Double
             drawCircle(ink.ochre, radius = 5.dp.toPx(), center = Offset(x, y))
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("06:00", style = mono(10.5.sp, ink.ink3)); Text("现在 $now", style = mono(10.5.sp, ink.ink3)); Text(end, style = mono(10.5.sp, ink.ink3))
+            Text("06:00", style = mono(10.5.sp, ink.ink3)); Text("现在 $now", style = mono(10.5.sp, ink.ink3)); Text("24:00", style = mono(10.5.sp, ink.ink3))
         }
     }
 }
