@@ -14,8 +14,8 @@ android {
         applicationId = "com.functionhx.riji"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // 发布签名：密钥只在站长本机（~/.riji/android-release.properties，或环境变量 RIJI_RELEASE_PROPERTIES 指向的文件），
