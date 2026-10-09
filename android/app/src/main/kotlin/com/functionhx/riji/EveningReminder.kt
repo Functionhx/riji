@@ -76,7 +76,8 @@ class EveningReminder : BroadcastReceiver() {
             val file = File(context.filesDir, "riji/changes.jsonl")
             if (!file.exists()) return null
             val device = context.getSharedPreferences("riji", 0).getString("device", null) ?: "android-reminder"
-            val book = DailyBook(RecordStore(ChangeLog(file), device), com.functionhx.riji.core.DayClock(dayStart = dayStart(context)))
+            val remote = ChangeLog(File(context.filesDir, "riji/remote-changes.jsonl"))
+            val book = DailyBook(RecordStore(ChangeLog(file), device, remote), com.functionhx.riji.core.DayClock(dayStart = dayStart(context)))
             return book.evening(book.clock.key(Instant.now()))
         }
 

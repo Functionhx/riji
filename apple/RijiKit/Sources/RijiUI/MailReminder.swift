@@ -84,6 +84,12 @@ public final class MailReminder {
         ]
     }
 
+    /// 配对时一并交给新设备的提醒设置（与上报的格式相同）。
+    public var settingsJSON: JSONValue {
+        guard let data = try? JSONSerialization.data(withJSONObject: settingsPayload), let json = try? JSONValue(jsonData: data) else { return [:] }
+        return json
+    }
+
     private func adopt(_ server: [String: Any]) {
         guard let updated = server["updated_at"] as? Int, updated > defaults.integer(forKey: Self.updatedKey) else { return }
         if let email = server["email"] as? Bool { defaults.set(email, forKey: Self.emailKey) }

@@ -46,7 +46,8 @@ public final class RijiModel {
             device = "\(prefix)-\(UUID().uuidString.prefix(8).lowercased())"
             defaults.set(device, forKey: "riji.device")
         }
-        let store = try RecordStore(log: ChangeLog(url: folder.appendingPathComponent("changes.jsonl")), device: device)
+        let store = try RecordStore(log: ChangeLog(url: folder.appendingPathComponent("changes.jsonl")),
+                                    remoteLog: ChangeLog(url: folder.appendingPathComponent("remote-changes.jsonl")), device: device)
         return RijiModel(book: DailyBook(store: store, clock: DayClock(dayStart: ReminderSettings.dayStart)))
     }
 

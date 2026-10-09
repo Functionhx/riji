@@ -80,6 +80,7 @@ public struct ReminderSettingsView: View {
     @AppStorage(MailReminder.delayKey) private var delay = 60
     @AppStorage(ReminderSettings.dayStartKey) private var dayStart = ReminderSettings.defaultDayStart
     @State private var token = ""
+    @Environment(SyncController.self) private var sync: SyncController?
     private let mail = MailReminder.shared
 
     public init() {}
@@ -87,6 +88,7 @@ public struct ReminderSettingsView: View {
     public var body: some View {
         let parsed = MailReminder.parse(recipients)
         Form {
+            if let sync { SyncSection(sync: sync, hasToken: !token.isEmpty) }
             Section {
                 Picker("一天结束于", selection: touched($dayStart)) {
                     ForEach(ReminderSettings.dayStarts, id: \.self) { Text(ReminderSettings.dayStartLabel($0)) }
@@ -162,6 +164,85 @@ public struct ReminderSettingsView: View {
             let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
             minutes = (parts.hour ?? 22) * 60 + (parts.minute ?? 30)
             MailReminder.touch()
+        }
+    }
+}
+
+/// 设置里的「同步」：开启、状态、立即同步、添加手机（这台 Mac 是配对的发起端）。
+struct SyncSection: View {
+    let sync: SyncController
+    let hasToken: Bool
+
+    var body: some View {
+        Section {
+            if !sync.enabled {
+                Button("在这台 Mac 上开启同步") { sync.enable() }
+                    .disabled(!hasToken)
+                if !hasToken { Text("先在下面「邮件提醒」里填连接码。").font(.caption).foregroundStyle(.secondary) }
+            } else {
+                HStack {
+                    Text(statusLine)
+                    Spacer()
+                    Button(sync.syncing ? "同步中…" : "立即同步") { Task { await sync.sync() } }.disabled(sync.syncing)
+                }
+                pairingView
+            }
+        } header: {
+            Text("同步")
+        } footer: {
+            Text("手机与 Mac 的内容端到端加密同步：密钥只在你的设备上，腾讯云只存密文。打开应用、内容变化后与每分钟会自动同步。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var statusLine: String {
+        var parts = [sync.status]
+        if let last = sync.lastSync { parts.append(last.formatted(date: .omitted, time: .shortened)) }
+        if sync.devices > 0 { parts.append("\(sync.devices) 台设备") }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var pairingView: some View {
+        switch sync.pairing {
+        case .idle:
+            Button("添加手机…") { sync.startPairing() }
+        case .starting:
+            Text("正在生成配对码…").foregroundStyle(.secondary)
+        case let .waiting(code):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("在手机「我 → 同步」里输入这串数字（10 分钟内有效）").font(.callout)
+                Text(String(code.prefix(4)) + " " + String(code.suffix(4)))
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                    .textSelection(.enabled)
+                Button("取消") { sync.cancelPairing() }
+            }
+        case let .confirm(_, sas):
+            VStack(alignment: .leading, spacing: 8) {
+                Text("手机上显示的比对码是这个吗？").font(.callout)
+                Text(String(sas.prefix(3)) + " " + String(sas.suffix(3)))
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                Text("一致才点「一致，发送」：不一致说明有人在中间冒充，取消即可。").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("一致，发送") { sync.confirmPairing() }.keyboardShortcut(.defaultAction)
+                    Button("不一致，取消") { sync.cancelPairing() }
+                }
+            }
+        case .sending:
+            Text("正在发送…").foregroundStyle(.secondary)
+        case .done:
+            HStack {
+                Text("已发送，手机正在同步")
+                Spacer()
+                Button("完成") { sync.cancelPairing() }
+            }
+        case let .failed(message):
+            HStack {
+                Text(message).foregroundStyle(.red)
+                Spacer()
+                Button("重试") { sync.startPairing() }
+            }
         }
     }
 }

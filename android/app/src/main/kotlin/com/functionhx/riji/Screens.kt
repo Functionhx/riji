@@ -453,6 +453,45 @@ private fun EditDialog(title: String, initial: String, onDismiss: () -> Unit, on
 
 // ---------------------------------------------------------------- 时间线 / 进度 / 我
 
+/** 同步：没配对时输入 Mac 上的配对码，核对比对码；配对后显示状态与「立即同步」。 */
+@Composable
+private fun SyncSettings(model: RijiViewModel) {
+    val ink = LocalInk.current
+    Eyebrow("同步")
+    if (model.syncEnabled) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val parts = listOfNotNull(
+                model.syncStatus,
+                model.lastSync?.atZone(java.time.ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("HH:mm")),
+                model.syncDevices.takeIf { it > 0 }?.let { "$it 台设备" },
+            )
+            Text(parts.joinToString(" · "), style = body(14.sp, ink.ink), modifier = Modifier.weight(1f))
+            TextButton({ model.syncNow() }, enabled = !model.syncing) { Text(if (model.syncing) "同步中…" else "立即同步", color = ink.ochre) }
+        }
+        Text("与 Mac 端到端加密同步：密钥只在你的设备上，腾讯云只存密文。打开应用、内容变化后与每分钟会自动同步。", style = body(13.sp, ink.ink3))
+        return
+    }
+    var code by remember { mutableStateOf("") }
+    when (val state = model.pairState) {
+        is RijiViewModel.PairState.Confirm -> {
+            Text("请确认 Mac 上显示的比对码", style = body(14.sp, ink.ink2))
+            Text(state.sas.take(3) + " " + state.sas.takeLast(3), style = mono(32.sp, ink.ink).copy(fontWeight = FontWeight.SemiBold))
+            Text("一致的话，在 Mac 上点「一致，发送」；不一致就取消。正在等 Mac…", style = body(13.sp, ink.ink3))
+            TextButton({ model.cancelPairing() }) { Text("取消", color = ink.ink2) }
+        }
+        RijiViewModel.PairState.Joining -> Text("正在连接…", style = body(14.sp, ink.ink2))
+        RijiViewModel.PairState.Done -> Text("配对完成，正在同步…", style = body(14.sp, ink.ink))
+        else -> {
+            Text("在 Mac 的「设置 → 同步」里点「添加手机」，把显示的 8 位数字填在这里。", style = body(13.5.sp, ink.ink2))
+            LabeledField("配对码", code, singleLine = true) { code = it.filter(Char::isDigit).take(8) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton({ model.joinPairing(code) }, enabled = code.length == 8) { Text("配对", color = ink.ochre) }
+                (state as? RijiViewModel.PairState.Failed)?.let { Text(it.message, style = body(12.sp, Color(0xFFB5443A))) }
+            }
+        }
+    }
+}
+
 /** 邮件提醒（兜底）：开关、收件邮箱（可多个）、兜底时间、连接码、测试邮件。 */
 @Composable
 private fun MailSettings(model: RijiViewModel) {
@@ -492,7 +531,7 @@ private fun MailSettings(model: RijiViewModel) {
         Text(model.mailStatus, style = body(12.sp, ink.ink3))
     }
     Text("到「提醒时间 + 兜底时间」时，今日总结或明日目标仍然空着、或者今天还没打开日迹，就由腾讯云上的服务发一封邮件，一天最多一封。" +
-        "只上传今天的几个数字（总结写没写、目标几条、完成几件），不上传笔记内容。在 Mac 上改过的收件人会自动同步过来。", style = body(13.sp, ink.ink3))
+        "只上传今天的几个数字（总结写没写、目标几条、完成几件），不上传笔记内容。在 Mac 上改过的收件人会自动同步过来；和 Mac 配对时连接码会自动填好。", style = body(13.sp, ink.ink3))
 }
 
 @Composable
@@ -605,8 +644,7 @@ fun MeScreen(model: RijiViewModel) {
         }
         Text("每天一页：灵感、今日目标、长期进度、晚上一句总结和明日目标。", style = body(14.sp, ink.ink2))
         Box(Modifier.fillMaxWidth().height(1.dp).background(ink.line))
-        Eyebrow("同步")
-        Text("一键同步（手机 → 腾讯云 → GitHub，与 MacBook 和个人网站互通）在下一阶段开放。现在的内容只在这台手机上。", style = body(13.5.sp, ink.ink2))
+        SyncSettings(model)
         Eyebrow("一天")
         Text("一天结束于", style = body(14.5.sp, ink.ink))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -638,6 +676,6 @@ fun MeScreen(model: RijiViewModel) {
             "荣耀手机请在「设置 → 应用 → 日迹」里允许自启动与后台运行，否则提醒可能被系统拦下。", style = body(13.sp, ink.ink3))
         MailSettings(model)
         Eyebrow("这台设备")
-        Text("已记录 ${model.days().count { model.stats(it.date).hasContent }} 天 · 数据只在本机", style = mono(12.sp, ink.ink3))
+        Text("已记录 ${model.days().count { model.stats(it.date).hasContent }} 天 · " + if (model.syncEnabled) "与 Mac 加密同步" else "数据只在本机", style = mono(12.sp, ink.ink3))
     }
 }

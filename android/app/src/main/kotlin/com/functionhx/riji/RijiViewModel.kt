@@ -49,6 +49,29 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         private set
     private var reportJob: Job? = null
 
+    // 同步（这台手机是配对的加入端）
+    sealed interface PairState {
+        data object Idle : PairState
+        data object Joining : PairState
+        data class Confirm(val sas: String) : PairState
+        data object Done : PairState
+        data class Failed(val message: String) : PairState
+    }
+    var syncEnabled by mutableStateOf(false)
+        private set
+    var syncing by mutableStateOf(false)
+        private set
+    var syncStatus by mutableStateOf("")
+        private set
+    var syncDevices by mutableIntStateOf(0)
+        private set
+    var lastSync by mutableStateOf<java.time.Instant?>(null)
+        private set
+    var pairState by mutableStateOf<PairState>(PairState.Idle)
+        private set
+    private var engine: com.functionhx.riji.core.SyncEngine? = null
+    private var pairJob: Job? = null
+
     init {
         val prefs = application.getSharedPreferences("riji", 0)
         val device = prefs.getString("device", null) ?: "android-${UUID.randomUUID().toString().take(8)}".also {
@@ -56,10 +79,84 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         }
         this.device = device
         val log = ChangeLog(File(application.filesDir, "riji/changes.jsonl"))
-        book = DailyBook(RecordStore(log, device), DayClock(dayStart = EveningReminder.dayStart(application)))
+        val remote = ChangeLog(File(application.filesDir, "riji/remote-changes.jsonl"))
+        book = DailyBook(RecordStore(log, device, remote), DayClock(dayStart = EveningReminder.dayStart(application)))
         today = book.clock.key(Instant.now())
         selectedDate = today
         perform { book.ensureDay(today) }
+        SyncKeyStore.load(application)?.let(::startSync)
+        viewModelScope.launch { while (true) { delay(60_000); syncNow() } }
+    }
+
+    private fun startSync(key: com.functionhx.riji.core.SyncKey) {
+        val token = MailReminder.load(getApplication()).token.ifEmpty { syncStatus = "缺连接码"; return }
+        engine = com.functionhx.riji.core.SyncEngine(book.store, key, HttpSyncTransport(token), File(getApplication<Application>().filesDir, "riji/sync"))
+        syncEnabled = true
+        lastSync = engine?.lastSync
+        syncStatus = if (lastSync == null) "已开启" else "已同步"
+    }
+
+    /** 同步一轮（IO 线程）；拉回了东西就合并同一天的重复页、刷新界面。 */
+    fun syncNow() {
+        val engine = engine ?: return
+        if (syncing) return
+        syncing = true
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { engine.sync() } }
+            syncing = false
+            result.onSuccess { report ->
+                syncDevices = report.devices
+                lastSync = engine.lastSync
+                syncStatus = report.problems.firstOrNull() ?: "已同步"
+                if (report.absorbed > 0) {
+                    revision++
+                    perform { book.reconcileDays() }
+                    refreshDay()
+                }
+            }.onFailure { syncStatus = "同步失败：${it.message ?: it.javaClass.simpleName}" }
+        }
+    }
+
+    fun joinPairing(code: String) {
+        val digits = code.filter(Char::isDigit)
+        if (digits.length != 8) { pairState = PairState.Failed("配对码是 8 位数字"); return }
+        pairJob?.cancel()
+        pairState = PairState.Joining
+        pairJob = viewModelScope.launch {
+            val join = PairingJoin(digits)
+            val sas = withContext(Dispatchers.IO) { runCatching { join.join() } }.getOrElse { pairState = PairState.Failed(it.message ?: "配对失败"); return@launch }
+            pairState = PairState.Confirm(sas)
+            val deadline = System.currentTimeMillis() + 600_000
+            while (System.currentTimeMillis() < deadline) {
+                delay(1_500)
+                val payload = withContext(Dispatchers.IO) { runCatching { join.fetch() } }.getOrElse { pairState = PairState.Failed(it.message ?: "配对失败"); return@launch }
+                    ?: continue
+                adoptPairing(payload)
+                return@launch
+            }
+            pairState = PairState.Failed("等太久了，配对码已过期")
+        }
+    }
+
+    fun cancelPairing() { pairJob?.cancel(); pairState = PairState.Idle }
+
+    /** 信封里的日迹密钥、连接码与提醒设置。 */
+    private fun adoptPairing(payload: com.functionhx.riji.core.JsonValue) {
+        val app = getApplication<Application>()
+        val key = PairingJoin.keyFrom(payload) ?: run { pairState = PairState.Failed("信封里没有密钥"); return }
+        payload["token"]?.string?.let { token -> MailReminder.save(app, MailReminder.load(app).copy(token = token), touch = false) }
+        payload["settings"]?.let { settings ->
+            runCatching { MailReminder.adoptFromPairing(app, org.json.JSONObject(String(settings.canonicalBytes()))) }
+        }
+        mail = MailReminder.load(app)
+        reminderOn = EveningReminder.enabled(app)
+        reminderMinutes = EveningReminder.minutes(app)
+        applyDayStart(EveningReminder.dayStart(app))
+        SyncKeyStore.save(app, key)
+        startSync(key)
+        pairState = PairState.Done
+        syncNow()
+        scheduleReport()
     }
 
     /** 调试版：本机为空时写入示例内容（只用于截图与演示）。 */
@@ -93,6 +190,16 @@ class RijiViewModel(application: Application) : AndroidViewModel(application) {
         }
         revision++
         scheduleReport()
+        scheduleSync()
+    }
+
+    private var syncJob: Job? = null
+
+    /** 内容变了：几秒后同步一轮（连续修改只同步最后一次）。 */
+    private fun scheduleSync() {
+        if (engine == null) return
+        syncJob?.cancel()
+        syncJob = viewModelScope.launch { delay(3_000); syncNow() }
     }
 
     /** 内容变了：一秒后上报今天的数字（连续修改只报最后一次）。 */

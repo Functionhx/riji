@@ -27,5 +27,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         model.refreshDay()
         model.scheduleReport()
+        model.syncNow()
     }
 }

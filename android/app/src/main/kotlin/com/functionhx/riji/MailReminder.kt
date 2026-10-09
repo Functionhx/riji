@@ -51,6 +51,12 @@ object MailReminder {
             .put("updated_at", prefs(context).getLong("settings_updated", 0))
     }
 
+    /** 配对时从 Mac 带来的设置：直接采用（这台手机还没有自己的设置）。 */
+    fun adoptFromPairing(context: Context, settings: JSONObject) {
+        prefs(context).edit().putLong("settings_updated", 0).apply()
+        adopt(context, settings.put("updated_at", maxOf(1L, settings.optLong("updated_at", 1))))
+    }
+
     /** 服务器上的设置比本机新：照着更新（含通知时间）。返回是否改了本机设置。 */
     private fun adopt(context: Context, server: JSONObject): Boolean {
         val updated = server.optLong("updated_at", 0)

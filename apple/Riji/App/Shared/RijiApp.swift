@@ -5,12 +5,15 @@ import SwiftUI
 @main
 struct RijiApp: App {
     @State private var model: RijiModel
+    @State private var sync: SyncController?
     private let coordinator: ReminderCoordinator?
 
     init() {
         let model = AppBootstrap.makeModel()
+        let sync = AppBootstrap.isDemo || AppBootstrap.openError != nil ? nil : SyncController(model: model)
         _model = State(initialValue: model)
-        coordinator = AppBootstrap.isDemo ? nil : ReminderCoordinator(model: model)
+        _sync = State(initialValue: sync)
+        coordinator = AppBootstrap.isDemo ? nil : ReminderCoordinator(model: model, sync: sync)
     }
 
     var body: some Scene {
@@ -50,7 +53,7 @@ struct RijiApp: App {
         #endif
         #if os(macOS)
         Settings {
-            ReminderSettingsView().frame(width: 480)
+            ReminderSettingsView().frame(width: 480).environment(sync)
         }
         #endif
     }
@@ -94,12 +97,14 @@ enum AppBootstrap {
 @MainActor
 final class ReminderCoordinator {
     private let model: RijiModel
+    private let sync: SyncController?
     private var pending: Task<Void, Never>?
     private var ticker: Task<Void, Never>?
     private var defaultsObserver: NSObjectProtocol?
 
-    init(model: RijiModel) {
+    init(model: RijiModel, sync: SyncController?) {
         self.model = model
+        self.sync = sync
         observe()
         defaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.settingsChanged() }
@@ -108,6 +113,7 @@ final class ReminderCoordinator {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 self?.model.refreshDay()
+                await self?.sync?.sync()
             }
         }
         schedule()
@@ -137,9 +143,10 @@ final class ReminderCoordinator {
 
     private func schedule() {
         pending?.cancel()
-        pending = Task { [model] in
-            try? await Task.sleep(for: .seconds(1))
+        pending = Task { [model, sync] in
+            try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
+            await sync?.sync()
             await MailReminder.shared.report(book: model.book, today: model.today,
                                              device: UserDefaults.standard.string(forKey: "riji.device") ?? "mac")
             await EveningReminder.reschedule(book: model.book, today: model.today, now: model.currentDate)
